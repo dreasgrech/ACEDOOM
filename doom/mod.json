@@ -2,6 +2,6 @@
   "version": "0.1.0",
   "title": "DOOM",
   "styles": ["doom.css"],
-  "scripts": ["png.js", "doom.js"],
+  "scripts": ["png.js", "audiomap.js", "doom.js"],
   "files": ["doomjs.js"]
 }

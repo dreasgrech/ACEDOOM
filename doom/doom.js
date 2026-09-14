@@ -23,7 +23,12 @@
  *   - maps keyboard events to DOOM keys while the panel is open, and the mouse
  *     on the screen to fire (left) and use (right). `Insert` shows/hides the
  *     panel, `Delete` stands in for DOOM's Escape because the real Escape
- *     pauses the sim and reloads the HUD page.
+ *     pauses the sim and reloads the HUD page;
+ *   - plays sound through the game: a page cannot make audio, but it can ask the
+ *     game for one of its GUI event types (UIAudioRequestAudioEvent), and the
+ *     ACEDOOM package remaps a few of those types (audiomap.js, generated from
+ *     audio/sounds.json) to DOOM events in acedoom.bank. The module's audio
+ *     imports report which sound starts; the host asks for the matching type.
  *
  * The loader creates `<div id="doom">` and `ACEUIModLoader.mod("doom")` describes
  * the mod, so identity is not repeated here. Styling lives in doom.css.
@@ -59,8 +64,8 @@ const ACEDoom = (function () {
     const BLIND_AFTER = 3;
     /** Frames between an image's `load` and revealing it: Cohtml draws the picture later than it fires the event. */
     const SWAP_DELAY_FRAMES = 2;
-    /** Runtime knobs, changeable from the dev console: ACEDoom.tune({ swapDelay: 3, waitForLoad: false }). */
-    const settings = { swapDelay: SWAP_DELAY_FRAMES, waitForLoad: true };
+    /** Runtime knobs, changeable from the dev console: ACEDoom.tune({ swapDelay: 3, waitForLoad: false, logSounds: true }). */
+    const settings = { swapDelay: SWAP_DELAY_FRAMES, waitForLoad: true, logSounds: false };
     /** Consecutive frames that failed to load before presenting stops. */
     const ERROR_LIMIT = 10;
     const STATS_EVERY_MS = 5000;
@@ -70,6 +75,14 @@ const ACEDoom = (function () {
     const ASCII_CHUNK = 4096;
     /** Key events DOOM has no use for are logged this many times, to learn what the engine sends. */
     const UNMAPPED_LOG_LIMIT = 8;
+
+    const AUDIO_COMMAND = "UIAudioRequestAudioEvent";
+    /** DOOM volumes are 0..127 after distance attenuation; quieter starts are not worth a request. */
+    const MIN_SOUND_VOLUME = 24;
+    /** DOOM can start many sounds in one tic; the game's UI audio does not need them all. */
+    const MAX_REQUESTS_PER_FRAME = 6;
+    /** A looping track is asked for again this long before its length runs out. */
+    const MUSIC_RESTART_MARGIN_MS = 250;
 
     const SCALE_DEFAULT = 2;
     const SCALE_MIN = 1;
@@ -172,7 +185,7 @@ const ACEDoom = (function () {
     };
 
     const newStats = function () {
-        return { ticks: 0, tickMs: 0, drawn: 0, presented: 0, encodeMs: 0, loaded: 0, shown: 0, errors: 0, timeouts: 0 };
+        return { ticks: 0, tickMs: 0, drawn: 0, presented: 0, encodeMs: 0, loaded: 0, shown: 0, errors: 0, timeouts: 0, sounds: 0, requests: 0 };
     };
 
     /** Build the DOM once (or re-use it) and return the state everything else works on. */
@@ -198,6 +211,9 @@ const ACEDoom = (function () {
             toggleDown: false,
             mouseKey: null,             // DOOM key held by a mouse button on the screen
             unmappedLogged: 0,
+            soundsLogged: 0,
+            requestsThisFrame: 0,
+            music: null,                // { gui, lengthMs, looping, startedAt } while DOOM plays a mapped track
             scale: SCALE_DEFAULT,
             base: SCRIPT_BASE,
             encoder: null,              // ACEDoomPng encoder, sized by onGameInit
@@ -266,6 +282,63 @@ const ACEDoom = (function () {
         state.encoder = ACEDoomPng.create(width, height, step);
     };
 
+    // ---- audio: DOOM's sound calls, reported by the module's ACEDOOM patch -------------------
+
+    /** The generated map (audiomap.js) or an empty one when the page has none. */
+    const audioMap = function () {
+        return typeof ACEDoomAudioMap === "undefined" ? { sfx: {}, music: {} } : ACEDoomAudioMap;
+    };
+
+    /** Ask the game to play one of its GUI event types; false without an engine (preview, harness). */
+    const requestGuiEvent = function (state, type) {
+        if (typeof engine === "undefined" || !engine.trigger) { return false; }
+
+        engine.trigger("OnUICommand", AUDIO_COMMAND, { __Type: AUDIO_COMMAND, type: type });
+        state.stats.requests += 1;
+
+        return true;
+    };
+
+    /** Sound effect `sfxId` (index into DOOM's S_sfx) started at `volume` 0..127. */
+    const onSoundStart = function (state, sfxId, volume, separation) {
+        const map = audioMap();
+        const type = map.sfx[sfxId];
+        const name = map.names ? map.names[sfxId] : "";
+
+        state.stats.sounds += 1;
+
+        if (settings.logSounds || state.soundsLogged < UNMAPPED_LOG_LIMIT) {
+            state.soundsLogged += 1;
+            log("sfx " + sfxId + (name ? " " + name : "") + " volume " + volume + " sep " + separation + (type ? " -> " + type : " (no slot)")
+                + (type && volume < MIN_SOUND_VOLUME ? " (too quiet, skipped)" : ""));
+        }
+
+        if (!type || volume < MIN_SOUND_VOLUME || state.requestsThisFrame >= MAX_REQUESTS_PER_FRAME) { return; }
+
+        state.requestsThisFrame += 1;
+        requestGuiEvent(state, type);
+    };
+
+    const playMusic = function (state, now) {
+        if (requestGuiEvent(state, state.music.gui)) { state.music.startedAt = now; }
+    };
+
+    /** DOOM changed music: play the mapped track, and keep restarting it while it should loop. */
+    const onMusicStart = function (state, musicId, looping) {
+        const slot = audioMap().music[musicId];
+
+        log("music " + musicId + (looping ? " looping" : "") + (slot ? " -> " + slot.gui : " (no slot)"));
+        state.music = slot ? { gui: slot.gui, lengthMs: slot.seconds * MS_PER_S, looping: Boolean(looping), startedAt: -1 } : null;
+
+        if (state.music) { playMusic(state, state.lastNow); }
+    };
+
+    /** FMOD cannot be told to stop from here; the track ends on its own and is not restarted. */
+    const onMusicStop = function (state) {
+        log("music stop");
+        state.music = null;
+    };
+
     /**
      * The module's imports: the ten doom.wasm declares, plus `env.getTempRet0`,
      * which wasm2js adds to legalise the i64 clock (low 32 bits returned, high 32
@@ -275,6 +348,11 @@ const ACEDoom = (function () {
         return {
             env: {
                 getTempRet0: function () { return 0; }
+            },
+            audio: {
+                onSoundStart: function (sfxId, volume, separation) { onSoundStart(state, sfxId, volume, separation); },
+                onMusicStart: function (musicId, looping) { onMusicStart(state, musicId, looping); },
+                onMusicStop: function () { onMusicStop(state); }
             },
             console: {
                 onInfoMessage: function (ptr, length) { logModuleText(state, "doom: ", ptr, length); },
@@ -520,7 +598,7 @@ const ACEDoom = (function () {
 
         log("stats: " + summary + ", drawn " + s.drawn + ", presented " + s.presented + " (encode " + average(s.encodeMs, s.presented)
             + " ms), loaded " + s.loaded + ", errors " + s.errors + ", timeouts " + s.timeouts + (state.blind ? ", blind" : "")
-            + ", swapDelay " + settings.swapDelay + ", clock " + Math.floor(state.doom.clockMs) + " ms");
+            + ", swapDelay " + settings.swapDelay + ", sounds " + s.sounds + ", requests " + s.requests + ", clock " + Math.floor(state.doom.clockMs) + " ms");
         setStatus(state, summary);
         state.stats = newStats();
     };
@@ -540,10 +618,16 @@ const ACEDoom = (function () {
 
         doom.clockMs += step;
         state.frameCount += 1;
+        state.requestsThisFrame = 0;
 
         if (now - state.lastTickAt >= TIC_MS) {
             state.lastTickAt = now;
             runTick(state);
+        }
+
+        if (state.music && state.music.looping && state.music.startedAt >= 0 && state.music.lengthMs > 0
+                && now - state.music.startedAt >= state.music.lengthMs - MUSIC_RESTART_MARGIN_MS) {
+            playMusic(state, now);
         }
 
         watchPending(state, now);
@@ -580,7 +664,7 @@ const ACEDoom = (function () {
         Object.keys(changes || {}).forEach(function (name) {
             if (settings[name] !== undefined) { settings[name] = changes[name]; }
         });
-        log("tuned: swapDelay=" + settings.swapDelay + ", waitForLoad=" + settings.waitForLoad);
+        log("tuned: swapDelay=" + settings.swapDelay + ", waitForLoad=" + settings.waitForLoad + ", logSounds=" + settings.logSounds);
 
         return settings;
     };
@@ -597,6 +681,13 @@ const ACEDoom = (function () {
 
     const isToggleKey = function (e) {
         return e.key === TOGGLE_KEY || e.code === TOGGLE_KEY || e.keyCode === KEY_CODES[TOGGLE_KEY];
+    };
+
+    /** Typing into an input (the dev console, chat) must never be taken as DOOM input. */
+    const isEditable = function (node) {
+        const tag = node && node.tagName ? String(node.tagName).toLowerCase() : "";
+
+        return tag === "input" || tag === "textarea" || Boolean(node && node.isContentEditable);
     };
 
     /** The DOOM key for a keyboard event, or null when DOOM has no use for it. */
@@ -628,6 +719,8 @@ const ACEDoom = (function () {
     };
 
     const onKey = function (state, e, down) {
+        if (isEditable(e.target)) { return; }
+
         if (isToggleKey(e)) {
             if (down && !state.toggleDown) { setOpen(state, !state.open); }
 
@@ -772,6 +865,9 @@ const ACEDoom = (function () {
         ERROR_LIMIT: ERROR_LIMIT,
         PHASE: PHASE,
         CLASS: CLASS,
+        MIN_SOUND_VOLUME: MIN_SOUND_VOLUME,
+        MAX_REQUESTS_PER_FRAME: MAX_REQUESTS_PER_FRAME,
+        AUDIO_COMMAND: AUDIO_COMMAND,
         create: create,
         imports: imports,
         keyMap: keyMap,

@@ -74,10 +74,11 @@ class DoomContractTests(unittest.TestCase):
         with open(os.path.join(MOD, "mod.json"), encoding="utf-8") as f:
             info = json.load(f)
         self.assertEqual(info["files"], ["doomjs.js"], "the JavaScript build ships; the game exposes no WebAssembly")
-        self.assertEqual(info["scripts"], ["png.js", "doom.js"], "the encoder loads before the host")
+        self.assertEqual(info["scripts"], ["png.js", "audiomap.js", "doom.js"], "the encoder and the audio map load before the host")
         self.assertGreater(os.path.getsize(WASM), 4_000_000, "the shareware WAD is embedded")
         imports = wasm_imports(WASM)
-        self.assertEqual(len(imports), 10)
+        self.assertEqual(len(imports), 13, "upstream's ten plus ACEDOOM's three audio hooks (tools/build_wasm.py)")
+        self.assertEqual(sorted(name for module, name in imports if module == "audio"), ["onMusicStart", "onMusicStop", "onSoundStart"])
         block = self.js[self.js.find("const imports = function"):self.js.find("/** keyCode -> DOOM key code")]
         for module, name in imports:
             self.assertRegex(block, rf"\b{module}: \{{", f"import module {module}")
@@ -115,6 +116,52 @@ class DoomContractTests(unittest.TestCase):
         self.assertIn("if (!state.open || ACEUIModLoader.hudHidden() || doom.phase !== PHASE.running) {", self.js)
         self.assertIn("doom.clockMs += step;", self.js)
         self.assertIsNone(re.search(r"setInterval|setTimeout", self.js), "the shared frame loop drives the game")
+
+
+class BankPatchTests(unittest.TestCase):
+    """tools/patch_bank.py: the rebuilt gui.bank must be what FMOD expects (launches 29-32 taught each rule)."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import patch_bank
+        cls.pb = patch_bank
+        try:
+            cls.stock = patch_bank.stock_gui_bank()
+        except SystemExit:
+            raise unittest.SkipTest("needs the installed game (content.kspkg)")
+
+    def test_rebuild_without_changes_is_byte_identical(self):
+        out, report = self.pb.patch(self.stock, b"", {})
+        self.assertEqual(out, self.stock)
+        self.assertEqual(report, [])
+
+    def test_swapping_a_sample_keeps_every_other_sample_and_fixes_every_size(self):
+        import struct
+        out, report = self.pb.patch(self.stock, self.stock, {"click.6": "stock:confirm"})
+        self.assertEqual(len(report), 1)
+        snd, fsb = self.pb.split_bank(out)
+        fields, samples = self.pb.parse_fsb5(out[fsb:])
+        _, stock_samples = self.pb.parse_fsb5(self.stock[self.stock.find(b"FSB5"):])
+        names = [s.name for s in stock_samples]
+        self.assertEqual([s.name for s in samples], names, "names and order unchanged")
+        self.assertEqual(samples[names.index("click.6")].data, stock_samples[names.index("confirm")].data)
+        for k, s in enumerate(samples):
+            if names[k] != "click.6":
+                self.assertEqual(s.data, stock_samples[k].data, names[k])
+        self.assertEqual(struct.unpack_from("<I", out, 4)[0], len(out) - 8, "RIFF size")
+        self.assertEqual(struct.unpack_from("<I", out, snd + 4)[0], len(out) - (snd + 8), "SND chunk size")
+        sndh = out.rfind(b"SNDH", 0, snd)
+        self.assertEqual(struct.unpack_from("<III", out, sndh + 8)[1:], (fsb, len(out) - fsb), "SNDH offset and size")
+        headers, names_size = struct.unpack_from("<II", out, fsb + 12)
+        self.assertEqual((fsb + 60 + headers + names_size) % 32, 0, "sample data 32-byte aligned")
+
+    def test_refuses_a_bank_in_another_sample_format(self):
+        pcm = bytearray(self.stock)
+        fsb = pcm.find(b"FSB5")
+        pcm[fsb + 24:fsb + 28] = (2).to_bytes(4, "little")     # pretend PCM16
+        with self.assertRaises(SystemExit):
+            self.pb.patch(self.stock, bytes(pcm), {"click.6": "confirm"})
 
 
 if __name__ == "__main__":

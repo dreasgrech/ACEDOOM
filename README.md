@@ -29,14 +29,16 @@ Cohtml UI, with no executable and no game file touched.
   and its URL parser caps `data:` URLs at 2048 characters. What it does have is
   `Blob`, `URL.createObjectURL` and a PNG decoder. So `doom/png.js` turns each
   frame into a truecolour PNG with stored (uncompressed) deflate blocks, the PNG
-  becomes a Blob, the Blob an object URL that is set as the src of one `<img>`.
-  The engine keeps the old picture until the new one is decoded, so nothing is
-  hidden or swapped (two images toggled on `load` flickered in game: Cohtml
-  fires `load` before the image is drawable). The next frame is presented once
-  `load` arrives, or without waiting if load events stop coming for three
-  frames. The module outputs 640x400 as doubled pixels; the
-  encoder samples it back to 320x200 losslessly. Constant parts of the PNG are
-  written once; a frame costs a pixel copy, an Adler-32 and a CRC-32.
+  becomes a Blob, the Blob an object URL on the src of an `<img>`. Cohtml blanks
+  an image the moment its src changes and draws the new picture a frame or two
+  later, and its `load` event fires before that, so both a single image and two
+  images swapped on `load` flickered in game. What works: two stacked images,
+  the hidden one at `opacity: 0` (still rendered, so its texture is ready)
+  receives the frame and is revealed two animation frames after its `load`.
+  `ACEDoom.tune({ swapDelay, waitForLoad })` changes that from the dev console.
+  The module outputs 640x400 as doubled pixels; the encoder samples it back to
+  320x200 losslessly. Constant parts of the PNG are written once; a frame costs
+  a pixel copy, an Adler-32 and a CRC-32, about 1 ms, and shows at 29 fps.
 - **Keys.** While the panel is open, keyboard events are mapped to DOOM keys and
   swallowed at the page level (the sim still sees them natively). The module
   exports its key codes, so the mapping is read from it at start; modifiers are
@@ -106,4 +108,60 @@ python -m unittest discover -s tests -v
 `third_party/doom.wasm` and the generated `doom/doomjs.js` are GPL-2.0 (id
 Software's DOOM source as built by jacobenget/doom.wasm) and embed the freely
 distributable DOOM shareware WAD. The host, encoder, stylesheet and tools in
-this repository are ours. No sound: the module has none.
+this repository are ours.
+
+## Sound: through the game's own UI bank
+
+A page cannot play audio in this Cohtml build (`<audio>` is not a media
+element, `<video>` has no demuxers, no Web Audio), and the game never loads a
+bank a mod names for its UI sounds: those events are created once at startup
+from five fixed banks. So DOOM's sounds live **inside the game's UI bank**:
+
+- `tools/build_wasm.py` rebuilds the module with three audio imports
+  (`audio.onSoundStart(sfx, volume, sep)`, `onMusicStart`, `onMusicStop`)
+  patched into DOOM's `I_StartSound`, `S_ChangeMusic` and `S_StopMusic`. Needs
+  wasi-sdk 24 and a binaryen release; the result is committed.
+- `tools/extract_sounds.py` writes the 55 shareware effects as WAV.
+  `audio/fmod/project/` is Kunos's FMOD Studio 2.03.13 modding template (from
+  the SDK) without its car samples; `tools/build_audio.py` generates
+  `project/Scripts/acedoom.js`, a Studio menu script that follows Kunos's
+  pipeline (clone the master bank, drop the template events) and imports the
+  effects `audio/sounds.json` names, one event each. The project's Desktop
+  encoding must be Vorbis, the format of the game's banks. That template is
+  Kunos's SDK content, so it is not committed here (`.gitignore` excludes
+  `audio/fmod/project/`): copy it in from the SDK to rebuild.
+- `tools/patch_bank.py` rebuilds the sample container of the stock
+  `content/sfx/gui.bank` with the livery-editor samples swapped for ours,
+  keeping every event, name and index, and fixing the container sizes, the
+  32-byte data alignment and the `SNDH` record that tells FMOD where the
+  container is (each of those cost a silent launch). The stock menu clicks
+  and music are untouched.
+- `build_audio.py --install` packs that `gui.bank` as
+  `ACEUIModLoaderMods-doom.kspkg` through the loader's `pack_kspkg.py`, named
+  to list after the loader package, padded so both overrides win. About
+  150 MB, since the whole bank rides along.
+- The host asks the game for the stock GUI event type whose sample is now a
+  DOOM sound (`doom/audiomap.js`, generated from `sounds.json`): volume above
+  24 of 127, at most 6 requests per frame. The livery-editor event plays seven
+  samples, one per GUI type (the type-to-sample map was verified in game with
+  `snippets/guisounddisc.js`; `GUI_PART_REMOVE` plays nothing), so seven DOOM
+  sounds are heard and their relatives share the slot. No music: the game's own
+  tracks would have to go.
+
+| GUI type | stock sample | DOOM sound in its place | also sent there |
+|---|---|---|---|
+| `GUI_PAINT_APPLY` | paint spray gun | pistol | chaingun |
+| `GUI_PAINT_REMOVE` | spray paint 07 | shotgun | super shotgun |
+| `GUI_STICKER_APPLY` | can spray paint | door slide | door close, blaze doors, switches, lifts |
+| `GUI_STICKER_REMOVE` | paper wrap | player pain grunt | oof, enemy pain |
+| `GUI_PART_APPLY` | pneumatic wrench | pickup pop | item and weapon pickups |
+| `GUI_WHEEL_APPLY` | ext gun install | death gurgle | enemy and player deaths |
+| `GUI_WHEEL_REMOVE` | ext gun remove | barrel explosion | rocket blasts |
+
+The paper-wrap slot swallows samples shorter than about 0.2 s, so the pickup
+blip goes in the pneumatic slot instead, and imp fireball impacts are left
+silent because they read as explosions.
+
+Side effect while installed: the livery editor's paint, sticker, part and
+wheel sounds are DOOM's. Every game update that changes `gui.bank` needs the
+package rebuilt (`build_audio.py --install` does it from the installed game).

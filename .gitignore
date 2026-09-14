@@ -5,3 +5,15 @@ __pycache__/
 # editor swap / temp files (install_mod.py skips them too)
 *.swp
 *~
+
+# build outputs (tools/build_wasm.py, pack_kspkg.py) and generated audio sources (tools/extract_sounds.py)
+build/
+dist/
+audio/sfx/
+
+# FMOD Studio project: Kunos's SDK modding template, copied in to rebuild the bank; not ours to
+# redistribute. Only our own files under audio/ are committed (sounds.json, fmod/studio_template.js).
+# To rebuild: copy the SDK template to audio/fmod/project/, run tools/build_audio.py, open in FMOD.
+audio/fmod/project/
+audio/acevo_content/
+audio/sfx44/

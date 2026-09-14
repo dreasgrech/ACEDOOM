@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "DOOM's sounds go through the game's own UI bank: the game creates its UI sound events once at startup",
+    "from five fixed banks and never loads a mod's bank, so tools/patch_bank.py swaps samples INSIDE",
+    "content/sfx/gui.bank (the livery-editor sounds, never the menu clicks or the music) for DOOM's, and the",
+    "host asks the game for the stock GUI event type that plays the swapped sample.",
+    "Each slot: 'sfx' the DS lump (audio/sfx/<sfx>.wav) placed in 'stockSample'; 'gui' the AudioGuiEventType",
+    "that plays that sample; 'also' other DOOM sounds the host routes to the same type (they play the slot's",
+    "sample). Which GUI type plays which sample was mapped in game (snippets/guisounddisc.js, 2026-09-14):",
+    "PAINT_APPLY=paint-spray-gun, PAINT_REMOVE=spray-paint-07, STICKER_APPLY=canspraypaint,",
+    "STICKER_REMOVE=paper-wrap, PART_APPLY=pneumatic-wrench, PART_REMOVE=nothing, WHEEL_APPLY=ext_gun_install,",
+    "WHEEL_REMOVE=ext_gun_remove."
+  ],
+  "slots": [
+    {
+      "gui": "GUI_PAINT_APPLY",
+      "stockSample": "049509623-paint-spray-gun-short-1",
+      "sfx": "pistol",
+      "also": ["chgun"],
+      "_role": "weapons fire"
+    },
+    {
+      "gui": "GUI_PAINT_REMOVE",
+      "stockSample": "006146515-spray-paint-spray-07",
+      "sfx": "shotgn",
+      "also": ["dshtgn"],
+      "_role": "shotgun"
+    },
+    {
+      "gui": "GUI_STICKER_APPLY",
+      "stockSample": "008726260-canspraypaint",
+      "sfx": "doropn",
+      "also": ["dorcls", "bdopn", "bdcls", "swtchn", "swtchx", "stnmov", "pstart", "pstop"],
+      "_role": "doors, switches, lifts"
+    },
+    {
+      "gui": "GUI_STICKER_REMOVE",
+      "stockSample": "051488767-paper-wrap-open",
+      "sfx": "plpain",
+      "also": ["oof", "popain", "dmpain"],
+      "_role": "pain grunts (this slot swallows very short samples, so a 0.3 s grunt not the pickup blip)"
+    },
+    {
+      "gui": "GUI_PART_APPLY",
+      "stockSample": "260571083-pneumatic-impact-wrench-hammer",
+      "sfx": "wpnup",
+      "also": ["itemup", "itmbk"],
+      "_role": "pickups (this slot plays short samples cleanly)"
+    },
+    {
+      "gui": "GUI_WHEEL_APPLY",
+      "stockSample": "ext_gun_install_3",
+      "sfx": "podth1",
+      "also": ["podth2", "podth3", "bgdth1", "bgdth2", "sgtdth", "pldeth", "pdiehi"],
+      "_role": "deaths"
+    },
+    {
+      "gui": "GUI_WHEEL_REMOVE",
+      "stockSample": "ext_gun_remove_1",
+      "sfx": "barexp",
+      "also": ["rxplod"],
+      "_role": "explosions (barrels and rockets only; imp fireball impacts stay silent, they misled as explosions)"
+    }
+  ],
+  "music": []
+}

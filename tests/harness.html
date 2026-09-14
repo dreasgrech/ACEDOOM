@@ -13,6 +13,7 @@
 <script src="../../ACEUIModLoader/tests/lib/lib.js"></script>
 <link rel="stylesheet" type="text/css" href="../doom/doom.css">
 <script src="../doom/png.js"></script>
+<script src="../doom/audiomap.js"></script>
 <script src="../doom/doom.js"></script>
 </head>
 <body>
@@ -183,6 +184,17 @@
                 const up = keyEvent("keyup", 37); eq(up.defaultPrevented, true, "keyup swallowed");
                 const esc = keyEvent("keydown", 27, "Escape"); eq(esc.defaultPrevented, false, "Escape left to the game");
                 eq(state.doom.phase, "running", "still running");
+                const input = document.createElement("input");
+                document.body.appendChild(input);
+                const typed = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "v" });
+                Object.defineProperty(typed, "keyCode", { value: 86 });
+                input.dispatchEvent(typed);
+                eq(typed.defaultPrevented, false, "keys typed into an input are not taken by DOOM");
+                const ins = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+                Object.defineProperty(ins, "keyCode", { value: 45 });
+                input.dispatchEvent(ins);
+                eq(state.open, true, "Insert typed into an input does not toggle either");
+                input.remove();
             });
 
             t("mouse: left button on the screen fires, right button uses, released anywhere", function () {
@@ -200,6 +212,38 @@
                 const fire = state.doom.named.Control, use = state.doom.named.Space;
                 eq(JSON.stringify(calls), JSON.stringify([["down", fire], ["up", fire], ["down", use], ["up", use]]), "one button at a time, released on window mouseup");
                 ok(screen.hasAttribute("data-nodrag"), "pressing the screen does not drag the panel");
+            });
+
+            t("audio: mapped sounds become UIAudioRequestAudioEvent requests, quiet, unmapped and excess ones do not; music restarts by length", function () {
+                const calls = [];
+                window.engine = { trigger: function (channel, name, data) { calls.push([channel, name, data]); } };
+                const audio = ACEDoom.imports(state).audio;
+                const requestsBefore = state.stats.requests;
+                nextFrame();                                   // resets the per-frame cap
+                audio.onSoundStart(1, 100, 128);               // pistol -> GUI_PAINT_APPLY (its stock sample is swapped for the pistol)
+                eq(calls.length, 1, "one request"); eq(calls[0][0], "OnUICommand"); eq(calls[0][1], "UIAudioRequestAudioEvent");
+                eq(JSON.stringify(calls[0][2]), JSON.stringify({ __Type: "UIAudioRequestAudioEvent", type: "GUI_PAINT_APPLY" }), "the stock command shape");
+                audio.onSoundStart(10, 100, 128); eq(calls.length, 1, "the chainsaw has no slot");
+                audio.onSoundStart(1, ACEDoom.MIN_SOUND_VOLUME - 1, 128); eq(calls.length, 1, "too quiet");
+                for (let i = 0; i < 20; i += 1) { audio.onSoundStart(2, 100, 128); }
+                eq(calls.length, ACEDoom.MAX_REQUESTS_PER_FRAME, "capped per frame"); nextFrame();
+                audio.onSoundStart(2, 100, 128); eq(calls.length, ACEDoom.MAX_REQUESTS_PER_FRAME + 1, "cap reset by the next frame");
+                eq(state.stats.requests, requestsBefore + calls.length, "requests counted");
+                calls.length = 0;
+                audio.onMusicStart(1, 1); eq(state.music, null, "no music slot: the game's own tracks are not replaced");
+                ACEDoomAudioMap.music[1] = { gui: "GUI_MUSIC_INTRO", seconds: 104 };   // pretend a slot, to test the restart logic
+                audio.onMusicStart(1, 1);                      // e1m1 -> GUI_MUSIC_INTRO, looping
+                eq(calls.length, 1, "music requested at once"); eq(calls[0][2].type, "GUI_MUSIC_INTRO"); ok(state.music && state.music.looping, "music state");
+                state.music.lengthMs = 16 * 40;                // pretend a 640 ms track (the restart margin is 250 ms)
+                for (let i = 0; i < 10; i += 1) { nextFrame(); }
+                eq(calls.length, 1, "not yet");
+                for (let i = 0; i < 20; i += 1) { nextFrame(); }
+                eq(calls.length, 2, "restarted once, before the length ran out");
+                audio.onMusicStop(); eq(state.music, null, "stopped"); const n = calls.length; nextFrame(); nextFrame(); nextFrame(); nextFrame(); eq(calls.length, n, "no restarts after stop");
+                delete ACEDoomAudioMap.music[1];
+                audio.onMusicStart(2, 1); eq(state.music, null, "e1m2 has no slot");
+                delete window.engine;
+                audio.onSoundStart(1, 100, 128); eq(calls.length, n, "without an engine nothing is requested");
             });
 
             state.presentingFailed = true;   // hold automatic presents so the pending frame can settle and one frame can be presented by hand
