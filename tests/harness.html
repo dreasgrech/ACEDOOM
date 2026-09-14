@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ACE DOOM tests</title>
+<style>
+  body { margin: 0; background: #222; color: #ddd; font: 12px monospace; }
+  .absolutecenter { position: relative; width: 1600px; height: 900px; overflow: hidden; }
+  #results { white-space: pre; }
+</style>
+<!-- shared test doubles (fake frame clock, in-memory localStorage, console capture) and the library, from the loader repo -->
+<script src="../../ACEUIModLoader/tests/lib/doubles.js"></script>
+<script src="../../ACEUIModLoader/tests/lib/lib.js"></script>
+<link rel="stylesheet" type="text/css" href="../doom/doom.css">
+<script src="../doom/png.js"></script>
+<script src="../doom/doom.js"></script>
+</head>
+<body>
+<div class="absolutecenter" id="center"></div>
+<canvas id="probe" width="8" height="8"></canvas>
+<script>
+(function () {
+    const H = window.__harness;
+    const t = H.t, eq = H.eq, ok = H.ok;
+    const me = ACEUIModLoader.mod("doom");
+    const extra = [];
+    let frame = 1000;
+    let finished = false;
+    const nextFrame = function () { frame += 16; window.__clock.step(frame); };
+    const finish = function () {
+        if (finished) { return; }
+        finished = true;
+        H.finish(extra);
+    };
+    const keyEvent = function (type, keyCode, key) {
+        const e = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key || "" });
+        Object.defineProperty(e, "keyCode", { value: keyCode });
+        window.dispatchEvent(e);
+        return e;
+    };
+    /** Draw an <img> onto the probe canvas and return its RGBA pixels. */
+    const pixelsOf = function (img, width, height) {
+        const canvas = document.getElementById("probe");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        return ctx.getImageData(0, 0, width, height).data;
+    };
+    const hex = function (n) { return "0x" + (n >>> 0).toString(16); };
+
+    // ---- the PNG encoder ------------------------------------------------------------
+
+    const W = 4, HGT = 3;
+    const bgra = new Uint8Array(W * HGT * 4);
+    for (let i = 0; i < W * HGT; i += 1) {
+        bgra[i * 4] = i * 20;          // B
+        bgra[i * 4 + 1] = 255 - i * 10; // G
+        bgra[i * 4 + 2] = i * 5;        // R
+        bgra[i * 4 + 3] = 7;            // A (ignored)
+    }
+    const enc = ACEDoomPng.create(W, HGT);
+    const png = ACEDoomPng.encodeBgra(enc, bgra);
+    const u32 = function (bytes, at) { return ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0; };
+    const ascii = function (s) { const a = new Uint8Array(s.length); for (let i = 0; i < s.length; i += 1) { a[i] = s.charCodeAt(i); } return a; };
+
+    t("png: known CRC-32 and Adler-32 values", function () {
+        const check = ascii("123456789");
+        eq(hex(ACEDoomPng.crc32(check, 0, check.length)), "0xcbf43926", "crc32 check value");
+        eq(hex(ACEDoomPng.adler32(ascii("Wikipedia"), 9)), "0x11e60398", "adler32 check value");
+    });
+
+    t("png: a 4x3 frame encodes to a well formed truecolour PNG", function () {
+        eq(Array.prototype.slice.call(png, 0, 8).join(","), "137,80,78,71,13,10,26,10", "signature");
+        eq(u32(png, 8), 13, "IHDR length"); eq(u32(png, 16), W, "width"); eq(u32(png, 20), HGT, "height");
+        eq(png[24], 8, "bit depth"); eq(png[25], 2, "colour type RGB");
+        const rawLength = HGT * (1 + W * 3);
+        eq(u32(png, 33), 2 + 5 + rawLength + 4, "IDAT length: zlib header + one stored block + adler");
+        eq(png[43] & 1, 1, "single block is final");
+        eq(png[43 + 5], 0, "first filter byte");
+        eq(png[43 + 6], 0, "first pixel R"); eq(png[43 + 7], 255, "first pixel G"); eq(png[43 + 8], 0, "first pixel B");
+        eq(png.length, 8 + 25 + 12 + (2 + 5 + rawLength + 4) + 12, "total length");
+        eq(u32(png, png.length - 4), 0xae426082, "IEND crc");
+    });
+
+    t("png: a 320x200 frame is split into stored blocks of at most 65535 bytes", function () {
+        const big = ACEDoomPng.create(320, 200);
+        eq(big.raw.length, 200 * 961, "raw scanlines");
+        eq(big.slots.map(function (s) { return s.length; }).join(","), "65535,65535,61130", "block sizes");
+        eq(big.out[big.slots[0].out - 5], 0, "first block not final"); eq(big.out[big.slots[2].out - 5], 1, "last block final");
+        const out = ACEDoomPng.encodeBgra(big, new Uint8Array(320 * 200 * 4));
+        eq(out.length, big.length, "returned view spans the whole file");
+        const half = ACEDoomPng.create(640, 400, 2);
+        eq(half.width + "x" + half.height, "320x200", "step 2 halves both axes");
+        const doubled = new Uint8Array(640 * 400 * 4);
+        for (let i = 0; i < 640 * 400; i += 1) { doubled[i * 4] = Math.floor(i / 640 / 2) & 255; doubled[i * 4 + 2] = Math.floor((i % 640) / 2) & 255; }
+        const small = ACEDoomPng.encodeBgra(half, doubled);
+        eq(small[43 + 5 + 1 + 3 * 5], 5, "pixel x=5 samples source x=10 (R)"); eq(small[43 + 5 + 1 + 3 * 5 + 2], 0, "row 0 (B)");
+        eq(small[43 + 5 + 961 * 7 + 1 + 2], 7, "row 7 samples source row 14 (B)");
+    });
+
+    // ---- the panel -------------------------------------------------------------------
+
+    const root = document.createElement("div");
+    root.id = "doom";
+    root.setAttribute(ACEUIModLoader.loader.MOUNTED_ATTR, "");
+    document.getElementById("center").appendChild(root);
+    const state = ACEDoom.attach(root);
+
+    t("attach: closed by default, markup once, hint names the keys, keys mapped from the KEY_* globals", function () {
+        ok(root.classList.contains("ace-doom"), "root class"); ok(root.classList.contains("dm-closed"), "closed");
+        eq(state.open, false); eq(root.querySelectorAll(".dm-frame").length, 2, "two frames");
+        eq(root.querySelector(".dm-title").textContent, "ACE DOOMdev", "title + version outside the game");
+        ok(root.querySelector(".dm-hint").textContent.indexOf("Insert show/hide") === 0, "hint");
+        eq(root.style.fontSize, "2rem", "default scale"); eq(root.style.visibility, "hidden", "hidden until positioned");
+        ok(window.__log.some(function (l) { return l.indexOf(me.prefix + " attached, closed, scale 2, toggle key Insert, module ") === 0; }), "attach log");
+        const map = ACEDoom.keyMap({ KEY_LEFTARROW: { value: 172 }, KEY_ESCAPE: { value: 27 }, KEY_FIRE: { value: 157 }, junk: 3 });
+        eq(map[37], 172, "left arrow"); eq(map[46], 27, "Delete stands in for Escape"); eq(map[17], 157, "Ctrl fires");
+        eq(map[27], undefined, "the real Escape is never mapped");
+        const fake = { doom: { keys: map } };
+        eq(ACEDoom.doomKeyFor(fake, { keyCode: 65, key: "a" }), 97, "letters are lower-case ascii");
+        eq(ACEDoom.doomKeyFor(fake, { keyCode: 53, key: "5" }), 53, "digits"); eq(ACEDoom.doomKeyFor(fake, { keyCode: 46 }), 27, "special");
+        eq(ACEDoom.doomKeyFor(fake, { keyCode: 112, key: "F1" }), null, "unknown keys are left alone");
+    });
+
+    t("Insert (by keyCode) opens the panel, persists it, starts loading; holding it does not toggle again", function () {
+        keyEvent("keydown", 45); eq(state.open, true, "open"); ok(!root.classList.contains("dm-closed"), "class removed");
+        eq(localStorage.getItem("acedoom.open"), "true", "persisted");
+        keyEvent("keydown", 45); eq(state.open, true, "auto-repeat ignored"); keyEvent("keyup", 45);
+        eq(state.doom.phase, "loading", "boot started");
+        ok(window.__log.some(function (l) { return l.indexOf(me.prefix + " loading ") === 0 && l.indexOf("/doom/doomjs.js") > 0; }), "module url from the script's own folder");
+    });
+
+    // ---- the module, asynchronously ----------------------------------------------------
+
+    const until = function (cond, then, tries) {
+        if (cond()) { then(); return; }
+        if (tries <= 0) { then(); return; }
+        setTimeout(function () { until(cond, then, tries - 1); }, 20);
+    };
+
+    const afterFrames = function (count, then) {
+        if (count <= 0) { then(); return; }
+        nextFrame();
+        setTimeout(function () { afterFrames(count - 1, then); }, 5);
+    };
+
+    until(function () { return state.doom.phase !== "loading" && state.doom.phase !== "compiling"; }, function () {
+        t("module: doomjs.js loads, instantiates and initialises with the embedded shareware WAD", function () {
+            eq(state.doom.phase, "running", "phase");
+            ok(state.doom.width > 0 && state.doom.height > 0, "frame size"); ok(state.encoder, "encoder sized");
+            ok(state.doom.memory.buffer.byteLength >= 72 * 65536, "memory");
+            ok(Object.keys(state.doom.keys).length >= 14, "special keys resolved");
+        });
+        window.__log.forEach(function (l) {
+            if (l.indexOf(me.prefix + " instantiated in") === 0 || l.indexOf(me.prefix + " loaded in") > 0 || l.indexOf(me.prefix + " doom: ") === 0) { extra.push(l); }
+        });
+        extra.push("frame " + state.doom.width + "x" + state.doom.height);
+
+        afterFrames(40, function () {
+            t("40 frames: ticks at 35 Hz, frames drawn, presented and shown through blob PNGs, no errors", function () {
+                const s = state.stats;
+                ok(s.ticks >= 15 && s.ticks <= 25, "ticks " + s.ticks); ok(s.drawn >= 1, "drawn " + s.drawn);
+                ok(s.presented >= 2, "presented " + s.presented); ok(s.shown >= 2, "shown " + s.shown);
+                eq(s.errors, 0, "errors"); eq(s.blind, 0, "blind swaps"); ok(state.doom.clockMs >= 40 * 16, "clock advanced by the frames (" + state.doom.clockMs + ")");
+                ok(root.querySelector(".dm-frame.dm-shown").src.indexOf("blob:") === 0, "shown frame is a blob URL");
+                extra.push("40 frames: " + JSON.stringify(s));
+            });
+
+            t("keys: an arrow key is swallowed and reported to the module, Escape passes through", function () {
+                const down = keyEvent("keydown", 37); eq(down.defaultPrevented, true, "arrow swallowed");
+                const up = keyEvent("keyup", 37); eq(up.defaultPrevented, true, "keyup swallowed");
+                const esc = keyEvent("keydown", 27, "Escape"); eq(esc.defaultPrevented, false, "Escape left to the game");
+                eq(state.doom.phase, "running", "still running");
+            });
+
+            until(function () { return !state.frames[1 - state.shown].pending; }, function () {
+                const copy = new Uint8Array(state.doom.memory.buffer.slice(state.doom.framePtr, state.doom.framePtr + state.doom.width * state.doom.height * 4));
+                const shownBefore = state.shown;
+                ACEDoom.present(state, frame);
+                until(function () { return state.shown !== shownBefore; }, function () {
+                    t("a shown frame decodes to the module's pixels", function () {
+                        eq(state.shown, 1 - shownBefore, "swapped after load");
+                        const img = state.frames[state.shown].el;
+                        const enc = state.encoder, step = enc.step, sw = state.doom.width;
+                        eq(step, 2, "the 640x400 module output is 320x200 doubled"); eq(enc.width, 320); eq(enc.height, 200);
+                        eq(img.naturalWidth, enc.width, "decoded width"); eq(img.naturalHeight, enc.height, "decoded height");
+                        const rgba = pixelsOf(img, enc.width, enc.height);
+                        let mismatches = 0, nonBlack = 0, notDoubled = 0;
+                        for (let y = 0; y < enc.height; y += 1) {
+                            for (let x = 0; x < enc.width; x += 1) {
+                                const i = y * enc.width + x, j = (y * step * sw + x * step);
+                                if (rgba[i * 4] !== copy[j * 4 + 2] || rgba[i * 4 + 1] !== copy[j * 4 + 1] || rgba[i * 4 + 2] !== copy[j * 4]) { mismatches += 1; }
+                                if (copy[j * 4] || copy[j * 4 + 1] || copy[j * 4 + 2]) { nonBlack += 1; }
+                                if (copy[j * 4] !== copy[(j + 1) * 4] || copy[j * 4] !== copy[(j + sw) * 4]) { notDoubled += 1; }
+                            }
+                        }
+                        eq(mismatches, 0, "pixel mismatches"); eq(notDoubled, 0, "source pixels really are doubled, so step 2 is lossless"); ok(nonBlack > 1000, "the frame is not blank (" + nonBlack + " lit pixels)");
+                    });
+
+                    t("closing pauses: no ticks, frozen clock, state persisted", function () {
+                        ACEDoom.setOpen(state, false);
+                        const ticks = state.stats.ticks, clock = state.doom.clockMs;
+                        nextFrame(); nextFrame(); nextFrame();
+                        eq(state.stats.ticks, ticks, "ticks"); eq(state.doom.clockMs, clock, "clock");
+                        eq(localStorage.getItem("acedoom.open"), "false"); ok(root.classList.contains("dm-closed"));
+                    });
+
+                    t("scale buttons step by 0.5 within 1..4 and persist", function () {
+                        root.querySelector("[data-action=larger]").click(); eq(state.scale, 2.5); eq(root.style.fontSize, "2.5rem");
+                        eq(localStorage.getItem("acedoom.scale"), "2.5");
+                        ACEDoom.setScale(state, 10); eq(state.scale, 4, "clamped high"); ACEDoom.setScale(state, 0); eq(state.scale, 1, "clamped low");
+                        root.querySelector("[data-action=close]").click(); eq(state.open, false, "x closes");
+                    });
+
+                    t("detach stops the loop, releases listeners and object URLs", function () {
+                        const cancelled = window.__clock.cancelled;
+                        ACEDoom.detach(state);
+                        eq(window.__clock.cancelled, cancelled + 1); eq(state.loop.running, false);
+                        ok(state.frames.every(function (f) { return f.url === null && f.pending === null; }), "urls released");
+                        keyEvent("keydown", 45); eq(state.open, false, "toggle key released");
+                    });
+
+                    finish();
+                }, 100);
+            }, 100);
+        });
+    }, 400);
+
+    setTimeout(function () {
+        if (finished) { return; }
+        t("harness finished within the time budget (module phase " + state.doom.phase + ")", function () { ok(false, "timed out"); });
+        finish();
+    }, 8000);
+}());
+</script>
+</body>
+</html>

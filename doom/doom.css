@@ -1,0 +1,145 @@
+/*
+ * ACE DOOM -- stylesheet. Linked by the ACEUIModLoader after the stock CSS, so
+ * --font-family-main is the game's. Stock HUD widget look: black 75 % panel,
+ * solid #1c1e1f header, flat buttons that turn #bd0000 on hover. No var()
+ * fallbacks (Cohtml).
+ *
+ * Scaling: the screen is 20em x 12.5em (DOOM's 16:10) and the script sets the
+ * root font-size in rem from the - / + buttons, so scale 2 shows 640 x 400
+ * pixels at a 16 px rem. The frame images are pixel-scaled, not smoothed.
+ */
+
+.ace-doom {
+    position: absolute;
+    left: 3rem;
+    top: 5rem;
+    width: 20em;
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.75);
+    border: 2px solid transparent;
+    color: rgba(255, 255, 255, 0.8);
+    font-family: var(--font-family-main);
+    font-size: 2rem;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+.ace-doom.dragging {
+    border-color: #fff;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* closed by the toggle key or the x button; visibility keeps the layout so restores still measure it */
+.ace-doom.dm-closed {
+    visibility: hidden;
+}
+
+body.hide-hud .ace-doom {
+    visibility: hidden;
+}
+
+/* ---- header: title, version, tools -------------------------------------------------- */
+
+.ace-doom .dm-header {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    height: 1.1em;
+    padding: 0 0 0 0.5em;
+    background: #1c1e1f;
+    font-size: 0.375em;
+    letter-spacing: 0.05em;
+}
+
+.ace-doom .dm-title {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    color: #fff;
+}
+
+.ace-doom .dm-version {
+    margin-left: 0.5em;
+    font-weight: 400;
+    color: #666;
+}
+
+.ace-doom .dm-tools {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+}
+
+/* flat text buttons, stock style: no border, red on hover */
+.ace-doom .dm-button {
+    display: flex;
+    align-items: center;
+    padding: 0 0.8em;
+    color: #999;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.ace-doom .dm-button:hover {
+    background: #bd0000;
+    color: #fff;
+}
+
+/* ---- screen: two stacked frames, one visible ------------------------------------------ */
+
+.ace-doom .dm-screen {
+    position: relative;
+    width: 20em;
+    height: 12.5em;
+    background: #000;
+    overflow: hidden;
+}
+
+.ace-doom .dm-frame {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    visibility: hidden;
+    image-rendering: pixelated;
+}
+
+.ace-doom .dm-frame.dm-shown {
+    visibility: visible;
+}
+
+/* ---- footer: status and key hints ------------------------------------------------------ */
+
+.ace-doom .dm-footer {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 1.2em;
+    padding: 0 0.6em;
+    font-size: 0.3em;
+    color: #999;
+}
+
+/* both texts clip rather than widen the panel past the screen */
+.ace-doom .dm-status,
+.ace-doom .dm-hint {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ace-doom .dm-status {
+    flex: 1 1 auto;
+    color: #ccc;
+}
+
+.ace-doom .dm-hint {
+    flex: 0 1 auto;
+    margin-left: 1em;
+    color: #666;
+}

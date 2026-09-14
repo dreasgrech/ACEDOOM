@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ACE DOOM preview</title>
+<!-- The mod outside the game: the library from the sibling loader checkout, then the real files.
+     Open the file directly in Edge or Chrome and press Insert; the module is a script, so no server is needed. -->
+<script src="../../ACEUIModLoader/tests/lib/lib.js"></script>
+<link rel="stylesheet" type="text/css" href="../doom/doom.css">
+<style>
+    :root { --font-family-main: "Bahnschrift", "Segoe UI", Arial, sans-serif; font-size: 16px; }
+    html, body { margin: 0; height: 100%; background: #101214; color: #ddd; font-family: var(--font-family-main); }
+    .absolutecenter { position: relative; width: 1600px; height: 900px; margin: auto; overflow: hidden;
+                      background: radial-gradient(ellipse at 50% 60%, #4a5560 0%, #1b1e22 70%); }
+    .note { position: absolute; left: 1rem; bottom: 1rem; color: #888; font-size: 0.8rem; }
+</style>
+<script src="../doom/png.js"></script>
+<script src="../doom/doom.js"></script>
+</head>
+<body>
+<div class="absolutecenter"><div id="doom"></div><div class="note">Insert shows the panel and loads doomjs.js from ../doom/. Delete opens the DOOM menu.</div></div>
+</body>
+</html>

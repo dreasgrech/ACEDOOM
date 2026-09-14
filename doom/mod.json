@@ -1,0 +1,7 @@
+{
+  "version": "0.1.0",
+  "title": "DOOM",
+  "styles": ["doom.css"],
+  "scripts": ["png.js", "doom.js"],
+  "files": ["doomjs.js"]
+}
