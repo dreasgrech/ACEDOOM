@@ -323,19 +323,28 @@ const ACEDoom = (function () {
         if (requestGuiEvent(state, state.music.gui)) { state.music.startedAt = now; }
     };
 
-    /** DOOM changed music: play the mapped track, and keep restarting it while it should loop. */
+    /**
+     * DOOM changed music. DOOM's title screen cycles demos and flips tracks every second or two, so
+     * this must not restart our track on every change: start it once and let the frame loop keep it
+     * looping. An unmapped track (the intro sting) is left to the current music, not a stop.
+     */
     const onMusicStart = function (state, musicId, looping) {
         const slot = audioMap().music[musicId];
 
-        log("music " + musicId + (looping ? " looping" : "") + (slot ? " -> " + slot.gui : " (no slot)"));
-        state.music = slot ? { gui: slot.gui, lengthMs: slot.seconds * MS_PER_S, looping: Boolean(looping), startedAt: -1 } : null;
+        if (!slot || state.music) { return; }
 
-        if (state.music) { playMusic(state, state.lastNow); }
+        log("music " + musicId + " -> " + slot.gui + ", looping");
+        state.music = { gui: slot.gui, lengthMs: slot.seconds * MS_PER_S, startedAt: -1 };
+        playMusic(state, state.lastNow);
     };
 
-    /** FMOD cannot be told to stop from here; the track ends on its own and is not restarted. */
+    /** DOOM stops music between every track change, so ignore it; the panel closing (setOpen) ends our music. */
     const onMusicStop = function (state) {
-        log("music stop");
+        return state;
+    };
+
+    /** Stop looping our music; the last one-shot plays out within one track length. */
+    const stopMusic = function (state) {
         state.music = null;
     };
 
@@ -625,7 +634,7 @@ const ACEDoom = (function () {
             runTick(state);
         }
 
-        if (state.music && state.music.looping && state.music.startedAt >= 0 && state.music.lengthMs > 0
+        if (state.music && state.music.startedAt >= 0 && state.music.lengthMs > 0
                 && now - state.music.startedAt >= state.music.lengthMs - MUSIC_RESTART_MARGIN_MS) {
             playMusic(state, now);
         }
@@ -656,7 +665,11 @@ const ACEDoom = (function () {
         persist.writeLocal(OPEN_KEY, state.open);
         state.lastTickAt = 0;
 
-        if (state.open) { boot(state); }
+        if (state.open) {
+            boot(state);
+        } else {
+            stopMusic(state);
+        }
     };
 
     /** Change the presentation knobs at runtime (dev console): returns the settings in force. */

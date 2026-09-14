@@ -130,6 +130,9 @@ def our_bank():
 
 def write_patched_bank(config):
     mapping = {s["stockSample"]: (s["sfx"] if s.get("sfx") else "stock:" + s["copyStock"]) for s in config["slots"] if s.get("stockSample")}
+    # musicSwaps replace a whole music track in gui.bank with one of our bank's music samples (raw name)
+    for m in config.get("musicSwaps", []):
+        mapping[m["stockSample"]] = m["bankSample"]
     path = our_bank()
     with open(path, "rb") as f:
         ours = f.read()

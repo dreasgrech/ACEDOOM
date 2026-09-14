@@ -230,18 +230,20 @@
                 audio.onSoundStart(2, 100, 128); eq(calls.length, ACEDoom.MAX_REQUESTS_PER_FRAME + 1, "cap reset by the next frame");
                 eq(state.stats.requests, requestsBefore + calls.length, "requests counted");
                 calls.length = 0;
-                audio.onMusicStart(1, 1); eq(state.music, null, "no music slot: the game's own tracks are not replaced");
-                ACEDoomAudioMap.music[1] = { gui: "GUI_MUSIC_INTRO", seconds: 104 };   // pretend a slot, to test the restart logic
-                audio.onMusicStart(1, 1);                      // e1m1 -> GUI_MUSIC_INTRO, looping
-                eq(calls.length, 1, "music requested at once"); eq(calls[0][2].type, "GUI_MUSIC_INTRO"); ok(state.music && state.music.looping, "music state");
+                audio.onMusicStart(30, 1); eq(state.music, null, "an unmapped track (intro) starts nothing");
+                audio.onMusicStart(1, 1);                      // e1m1 -> GUI_PART_APPLY (audiomap.js)
+                eq(calls.length, 1, "music requested at once"); eq(calls[0][2].type, "GUI_PART_APPLY"); ok(state.music, "music state");
+                audio.onMusicStart(5, 1); audio.onMusicStop(); audio.onMusicStart(30, 1);
+                eq(calls.length, 1, "DOOM flipping tracks and stopping does not restart our music");
                 state.music.lengthMs = 16 * 40;                // pretend a 640 ms track (the restart margin is 250 ms)
                 for (let i = 0; i < 10; i += 1) { nextFrame(); }
                 eq(calls.length, 1, "not yet");
                 for (let i = 0; i < 20; i += 1) { nextFrame(); }
-                eq(calls.length, 2, "restarted once, before the length ran out");
-                audio.onMusicStop(); eq(state.music, null, "stopped"); const n = calls.length; nextFrame(); nextFrame(); nextFrame(); nextFrame(); eq(calls.length, n, "no restarts after stop");
-                delete ACEDoomAudioMap.music[1];
-                audio.onMusicStart(2, 1); eq(state.music, null, "e1m2 has no slot");
+                eq(calls.length, 2, "looped once by length, ignoring DOOM's track changes");
+                const n = calls.length;
+                ACEDoom.setOpen(state, false); eq(state.music, null, "closing the panel stops the music");
+                for (let i = 0; i < 60; i += 1) { nextFrame(); } eq(calls.length, n, "no restarts after close");
+                ACEDoom.setOpen(state, true);
                 delete window.engine;
                 audio.onSoundStart(1, 100, 128); eq(calls.length, n, "without an engine nothing is requested");
             });

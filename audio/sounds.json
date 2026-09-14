@@ -16,51 +16,126 @@
       "gui": "GUI_PAINT_APPLY",
       "stockSample": "049509623-paint-spray-gun-short-1",
       "sfx": "pistol",
-      "also": ["chgun"],
+      "also": [
+        "chgun"
+      ],
       "_role": "weapons fire"
     },
     {
       "gui": "GUI_PAINT_REMOVE",
       "stockSample": "006146515-spray-paint-spray-07",
       "sfx": "shotgn",
-      "also": ["dshtgn"],
+      "also": [
+        "dshtgn"
+      ],
       "_role": "shotgun"
     },
     {
       "gui": "GUI_STICKER_APPLY",
       "stockSample": "008726260-canspraypaint",
       "sfx": "doropn",
-      "also": ["dorcls", "bdopn", "bdcls", "swtchn", "swtchx", "stnmov", "pstart", "pstop"],
+      "also": [
+        "dorcls",
+        "bdopn",
+        "bdcls",
+        "swtchn",
+        "swtchx",
+        "stnmov",
+        "pstart",
+        "pstop"
+      ],
       "_role": "doors, switches, lifts"
     },
     {
       "gui": "GUI_STICKER_REMOVE",
       "stockSample": "051488767-paper-wrap-open",
       "sfx": "plpain",
-      "also": ["oof", "popain", "dmpain"],
+      "also": [
+        "oof",
+        "popain",
+        "dmpain"
+      ],
       "_role": "pain grunts (this slot swallows very short samples, so a 0.3 s grunt not the pickup blip)"
-    },
-    {
-      "gui": "GUI_PART_APPLY",
-      "stockSample": "260571083-pneumatic-impact-wrench-hammer",
-      "sfx": "wpnup",
-      "also": ["itemup", "itmbk"],
-      "_role": "pickups (this slot plays short samples cleanly)"
     },
     {
       "gui": "GUI_WHEEL_APPLY",
       "stockSample": "ext_gun_install_3",
       "sfx": "podth1",
-      "also": ["podth2", "podth3", "bgdth1", "bgdth2", "sgtdth", "pldeth", "pdiehi"],
+      "also": [
+        "podth2",
+        "podth3",
+        "bgdth1",
+        "bgdth2",
+        "sgtdth",
+        "pldeth",
+        "pdiehi"
+      ],
       "_role": "deaths"
     },
     {
       "gui": "GUI_WHEEL_REMOVE",
       "stockSample": "ext_gun_remove_1",
       "sfx": "barexp",
-      "also": ["rxplod"],
+      "also": [
+        "rxplod"
+      ],
       "_role": "explosions (barrels and rockets only; imp fireball impacts stay silent, they misled as explosions)"
     }
   ],
-  "music": []
+  "music": [
+    {
+      "music": "e1m1",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m2",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m3",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m4",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m5",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m6",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m7",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m8",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    },
+    {
+      "music": "e1m9",
+      "gui": "GUI_PART_APPLY",
+      "seconds": 103
+    }
+  ],
+  "musicSwaps": [
+    {
+      "stockSample": "260571083-pneumatic-impact-wrench-hammer",
+      "bankSample": "d_e1m1",
+      "_note": "GUI_PART_APPLY plays the pneumatic sample; it plays a full 103 s track (unlike the menu-click slots). Host fires GUI_PART_APPLY when a DOOM level starts, loops every 103 s. Pickup sound sacrificed for music."
+    }
+  ],
+  "_musicExperiment": "EXPERIMENT: every UI music track is DOOM E1M1, so any menu/gameplay music is unmistakable and GUI_MUSIC_MENU/GAMEPLAY/END are deterministic. If it works, the real version uses different DOOM tracks (E1M1-E1M9) for variety.",
+  "_note": "6 gameplay effects + music. Pickup dropped: its GUI_PART_APPLY slot now carries E1M1, the only garage slot free after the other six. Menu side effect: livery-editor 'part apply' plays E1M1."
 }

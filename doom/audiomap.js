@@ -23,8 +23,6 @@ const ACEDoomAudioMap = (function () {
             25: "GUI_STICKER_REMOVE",
             26: "GUI_STICKER_REMOVE",
             27: "GUI_STICKER_REMOVE",
-            32: "GUI_PART_APPLY",
-            33: "GUI_PART_APPLY",
             34: "GUI_STICKER_REMOVE",
             57: "GUI_WHEEL_APPLY",
             58: "GUI_WHEEL_APPLY",
@@ -37,11 +35,18 @@ const ACEDoomAudioMap = (function () {
             82: "GUI_WHEEL_REMOVE",
             86: "GUI_PAINT_APPLY",
             88: "GUI_STICKER_APPLY",
-            89: "GUI_STICKER_APPLY",
-            90: "GUI_PART_APPLY"
+            89: "GUI_STICKER_APPLY"
         },
         music: {
-
+            1: { gui: "GUI_PART_APPLY", seconds: 103 },
+            2: { gui: "GUI_PART_APPLY", seconds: 103 },
+            3: { gui: "GUI_PART_APPLY", seconds: 103 },
+            4: { gui: "GUI_PART_APPLY", seconds: 103 },
+            5: { gui: "GUI_PART_APPLY", seconds: 103 },
+            6: { gui: "GUI_PART_APPLY", seconds: 103 },
+            7: { gui: "GUI_PART_APPLY", seconds: 103 },
+            8: { gui: "GUI_PART_APPLY", seconds: 103 },
+            9: { gui: "GUI_PART_APPLY", seconds: 103 }
         },
         names: ["none", "pistol", "shotgn", "sgcock", "dshtgn", "dbopn", "dbcls", "dbload", "plasma", "bfg", "sawup", "sawidl", "sawful", "sawhit", "rlaunc", "rxplod", "firsht", "firxpl", "pstart", "pstop", "doropn", "dorcls", "stnmov", "swtchn", "swtchx", "plpain", "dmpain", "popain", "vipain", "mnpain", "pepain", "slop", "itemup", "wpnup", "oof", "telept", "posit1", "posit2", "posit3", "bgsit1", "bgsit2", "sgtsit", "cacsit", "brssit", "cybsit", "spisit", "bspsit", "kntsit", "vilsit", "mansit", "pesit", "sklatk", "sgtatk", "skepch", "vilatk", "claw", "skeswg", "pldeth", "pdiehi", "podth1", "podth2", "podth3", "bgdth1", "bgdth2", "sgtdth", "cacdth", "skldth", "brsdth", "cybdth", "spidth", "bspdth", "vildth", "kntdth", "pedth", "skedth", "posact", "bgact", "dmact", "bspact", "bspwlk", "vilact", "noway", "barexp", "punch", "hoof", "metal", "chgun", "tink", "bdopn", "bdcls", "itmbk", "flame", "flamst", "getpow", "bospit", "boscub", "bossit", "bospn", "bosdth", "manatk", "mandth", "sssit", "ssdth", "keenpn", "keendt", "skeact", "skesit", "skeatk", "radio"]
     };
