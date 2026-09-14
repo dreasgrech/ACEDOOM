@@ -87,7 +87,11 @@ body.hide-hud .ace-doom {
     color: #fff;
 }
 
-/* ---- screen: two stacked frames, one visible ------------------------------------------ */
+/*
+ * ---- screen: two stacked frame images. The hidden one is at opacity 0, not
+ * visibility hidden, so the engine still renders it and has its texture ready
+ * when the script reveals it a couple of frames after `load`.
+ */
 
 .ace-doom .dm-screen {
     position: relative;
@@ -95,6 +99,7 @@ body.hide-hud .ace-doom {
     height: 12.5em;
     background: #000;
     overflow: hidden;
+    cursor: crosshair;
 }
 
 .ace-doom .dm-frame {
@@ -103,12 +108,12 @@ body.hide-hud .ace-doom {
     top: 0;
     width: 100%;
     height: 100%;
-    visibility: hidden;
+    opacity: 0;
     image-rendering: pixelated;
 }
 
 .ace-doom .dm-frame.dm-shown {
-    visibility: visible;
+    opacity: 1;
 }
 
 /* ---- footer: status and key hints ------------------------------------------------------ */

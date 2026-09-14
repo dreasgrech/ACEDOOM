@@ -13,12 +13,17 @@
  *   - runs `tickGame()` at DOOM's 35 Hz from the shared frame loop, feeding it a
  *     clock that only advances while the panel is open, so closing it pauses;
  *   - shows every frame the module draws: the BGRA buffer becomes a PNG
- *     (png.js), the PNG a Blob, the Blob an object URL on one of two <img>
- *     elements that are swapped once the new one has loaded. That is the only
+ *     (png.js), the PNG a Blob, the Blob an object URL on the src of an <img>.
+ *     Cohtml blanks an <img> the moment its src changes and draws the new
+ *     picture a frame or two later, `load` fires before that, and a single image
+ *     or two images swapped on `load` both flicker in game. So two images are
+ *     stacked: the hidden one (opacity 0, still rendered) receives the frame and
+ *     is revealed only `swapDelay` frames after its `load`. That is the only
  *     pixel path this Cohtml has (no ImageData writes, data: URLs capped at 2048);
- *   - maps keyboard events to DOOM keys while the panel is open. `Insert`
- *     shows/hides the panel, `Delete` stands in for DOOM's Escape because the
- *     real Escape pauses the sim and reloads the HUD page.
+ *   - maps keyboard events to DOOM keys while the panel is open, and the mouse
+ *     on the screen to fire (left) and use (right). `Insert` shows/hides the
+ *     panel, `Delete` stands in for DOOM's Escape because the real Escape
+ *     pauses the sim and reloads the HUD page.
  *
  * The loader creates `<div id="doom">` and `ACEUIModLoader.mod("doom")` describes
  * the mod, so identity is not repeated here. Styling lives in doom.css.
@@ -48,8 +53,14 @@ const ACEDoom = (function () {
      * clock is pushed a tic ahead: the wait ends, the melt runs at CPU speed.
      */
     const POLL_LIMIT = 50;
-    /** An <img> that reports neither load nor error within this is swapped blind. */
+    /** A frame whose <img> reports neither load nor error within this is given up on. */
     const PENDING_TIMEOUT_MS = 500;
+    /** That many give-ups in a row and load events are not waited for any more. */
+    const BLIND_AFTER = 3;
+    /** Frames between an image's `load` and revealing it: Cohtml draws the picture later than it fires the event. */
+    const SWAP_DELAY_FRAMES = 2;
+    /** Runtime knobs, changeable from the dev console: ACEDoom.tune({ swapDelay: 3, waitForLoad: false }). */
+    const settings = { swapDelay: SWAP_DELAY_FRAMES, waitForLoad: true };
     /** Consecutive frames that failed to load before presenting stops. */
     const ERROR_LIMIT = 10;
     const STATS_EVERY_MS = 5000;
@@ -57,6 +68,8 @@ const ACEDoom = (function () {
     /** DOOM draws 320 wide; the module hands out an integer upscale of it, undone before encoding. */
     const NATIVE_WIDTH = 320;
     const ASCII_CHUNK = 4096;
+    /** Key events DOOM has no use for are logged this many times, to learn what the engine sends. */
+    const UNMAPPED_LOG_LIMIT = 8;
 
     const SCALE_DEFAULT = 2;
     const SCALE_MIN = 1;
@@ -70,15 +83,22 @@ const ACEDoom = (function () {
     /** Legacy keyCodes: the engine reports those reliably, `key`/`code` less so. */
     const KEY_CODES = {
         Insert: 45, Delete: 46, Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18,
-        Space: 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Comma: 188, Period: 190
+        Space: 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Comma: 188, Period: 190,
+        ShiftLeft: 160, ShiftRight: 161, ControlLeft: 162, ControlRight: 163, AltLeft: 164, AltRight: 165
     };
     /** Key name -> the module's exported global holding DOOM's code for it. */
     const SPECIAL_KEYS = [
         ["ArrowLeft", "KEY_LEFTARROW"], ["ArrowRight", "KEY_RIGHTARROW"], ["ArrowUp", "KEY_UPARROW"],
         ["ArrowDown", "KEY_DOWNARROW"], ["Comma", "KEY_STRAFE_L"], ["Period", "KEY_STRAFE_R"],
-        ["Control", "KEY_FIRE"], ["Space", "KEY_USE"], ["Shift", "KEY_SHIFT"], ["Tab", "KEY_TAB"],
-        [MENU_KEY, "KEY_ESCAPE"], ["Enter", "KEY_ENTER"], ["Backspace", "KEY_BACKSPACE"], ["Alt", "KEY_ALT"]
+        ["Control", "KEY_FIRE"], ["ControlLeft", "KEY_FIRE"], ["ControlRight", "KEY_FIRE"],
+        ["Space", "KEY_USE"], ["Shift", "KEY_SHIFT"], ["ShiftLeft", "KEY_SHIFT"], ["ShiftRight", "KEY_SHIFT"],
+        ["Tab", "KEY_TAB"], [MENU_KEY, "KEY_ESCAPE"], ["Enter", "KEY_ENTER"], ["Backspace", "KEY_BACKSPACE"],
+        ["Alt", "KEY_ALT"], ["AltLeft", "KEY_ALT"], ["AltRight", "KEY_ALT"]
     ];
+    /** `key` values that differ from the names above. */
+    const KEY_ALIASES = { " ": "Space", ",": "Comma", ".": "Period" };
+    const MOUSE_LEFT = 0;
+    const MOUSE_RIGHT = 2;
     const LETTER_A = 65;
     const LETTER_Z = 90;
     const DIGIT_0 = 48;
@@ -94,7 +114,7 @@ const ACEDoom = (function () {
     const ACTION_CLOSE = "close";
 
     const TITLE_TEXT = "ACE DOOM";
-    const HINT_TEXT = TOGGLE_KEY + " show/hide · " + MENU_KEY + " menu · arrows move · Ctrl fire · Space use · Shift run";
+    const HINT_TEXT = TOGGLE_KEY + " show/hide · " + MENU_KEY + " menu · arrows move · Ctrl or click fire · Space or right-click use · Shift run";
 
     /** Class names shared with doom.css. */
     const CLASS = {
@@ -136,11 +156,15 @@ const ACEDoom = (function () {
     };
 
     const markup = function () {
+        const screenAttrs = {};
+
+        screenAttrs[NO_DRAG_ATTR] = "";
+
         return el("div", CLASS.header)
             + el("div", CLASS.title) + TITLE_TEXT + el("span", CLASS.version) + me.version + close("span") + close("div")
             + el("div", CLASS.tools) + button(ACTION_SMALLER, "-") + button(ACTION_LARGER, "+") + button(ACTION_CLOSE, "x") + close("div")
             + close("div")
-            + el("div", CLASS.screen) + el("img", CLASS.frame + " " + CLASS.shown) + el("img", CLASS.frame) + close("div")
+            + el("div", CLASS.screen, screenAttrs) + el("img", CLASS.frame + " " + CLASS.shown) + el("img", CLASS.frame) + close("div")
             + el("div", CLASS.footer)
             + el("span", CLASS.status) + "press " + TOGGLE_KEY + close("span")
             + el("span", CLASS.hint) + HINT_TEXT + close("span")
@@ -148,7 +172,7 @@ const ACEDoom = (function () {
     };
 
     const newStats = function () {
-        return { ticks: 0, tickMs: 0, drawn: 0, presented: 0, encodeMs: 0, shown: 0, errors: 0, blind: 0 };
+        return { ticks: 0, tickMs: 0, drawn: 0, presented: 0, encodeMs: 0, loaded: 0, shown: 0, errors: 0, timeouts: 0 };
     };
 
     /** Build the DOM once (or re-use it) and return the state everything else works on. */
@@ -162,14 +186,18 @@ const ACEDoom = (function () {
             screen: root.querySelector("." + CLASS.screen),
             status: root.querySelector("." + CLASS.status),
             frames: toArray(root.querySelectorAll("." + CLASS.frame)).map(function (img) {
-                return { el: img, url: null, pending: null, since: 0 };
+                return { el: img, url: null, pending: false, since: 0, readyAt: -1 };
             }),
-            shown: 0,                   // index into frames of the visible <img>
-            blind: false,               // <img> never reports load: swap right after setting src
+            shown: 0,                   // index of the visible frame; the other one receives the next picture
+            frameCount: 0,              // animation frames so far, for readyAt
+            blind: false,               // load events stopped coming: reveal after swapDelay without them
+            timeouts: 0,                // consecutive frames given up on
             consecutiveErrors: 0,
             presentingFailed: false,
             open: false,
             toggleDown: false,
+            mouseKey: null,             // DOOM key held by a mouse button on the screen
+            unmappedLogged: 0,
             scale: SCALE_DEFAULT,
             base: SCRIPT_BASE,
             encoder: null,              // ACEDoomPng encoder, sized by onGameInit
@@ -183,7 +211,8 @@ const ACEDoom = (function () {
                 frameDirty: false,
                 clockMs: 0,             // DOOM's clock: advances only while open and running
                 polls: 0,               // clock reads within the current tickGame call, see POLL_LIMIT
-                keys: {}                // keyCode -> DOOM key, from the module's KEY_* globals
+                keys: {},               // keyCode -> DOOM key, from the module's KEY_* globals
+                named: {}               // key/code name -> DOOM key, same source
             },
             stats: newStats(),
             lastNow: 0,
@@ -285,26 +314,35 @@ const ACEDoom = (function () {
         };
     };
 
-    /** keyCode -> DOOM key code, read from the module's exported KEY_* globals. */
+    /** { keys: keyCode -> DOOM key, named: key/code name -> DOOM key }, from the module's KEY_* globals. */
     const keyMap = function (exports) {
-        const map = {};
+        const keys = {};
+        const named = {};
 
         SPECIAL_KEYS.forEach(function (pair) {
             const global = exports[pair[1]];
 
-            if (global && typeof global.value === "number") { map[KEY_CODES[pair[0]]] = global.value; }
+            if (!global || typeof global.value !== "number") { return; }
+
+            keys[KEY_CODES[pair[0]]] = global.value;
+            named[pair[0]] = global.value;
+        });
+        Object.keys(KEY_ALIASES).forEach(function (alias) {
+            if (named[KEY_ALIASES[alias]] !== undefined) { named[alias] = named[KEY_ALIASES[alias]]; }
         });
 
-        return map;
+        return { keys: keys, named: named };
     };
 
     const started = function (state, exports, instantiateMs) {
         const doom = state.doom;
         const t0 = Date.now();
+        const map = keyMap(exports);
 
         doom.exports = exports;
         doom.memory = exports.memory;
-        doom.keys = keyMap(exports);
+        doom.keys = map.keys;
+        doom.named = map.named;
 
         try {
             exports.initGame();
@@ -316,7 +354,8 @@ const ACEDoom = (function () {
         doom.phase = PHASE.running;
         state.lastTickAt = 0;
         log("instantiated in " + instantiateMs + " ms, initGame in " + (Date.now() - t0) + " ms, frame " + doom.width + "x" + doom.height
-            + " shown as " + state.encoder.width + "x" + state.encoder.height + ", memory " + doom.memory.buffer.byteLength + " bytes, " + Object.keys(doom.keys).length + " special keys");
+            + " shown as " + state.encoder.width + "x" + state.encoder.height + ", memory " + doom.memory.buffer.byteLength + " bytes, "
+            + Object.keys(doom.keys).length + " special keys");
         setStatus(state, "running");
     };
 
@@ -358,33 +397,31 @@ const ACEDoom = (function () {
 
     // ---- rendering -----------------------------------------------------------------
 
-    /** Make frames[index] the visible one and release the previous image's URL. */
+    /** Reveal frames[index] (opacity 1) and hide the one shown so far; its URL stays alive until it is reused. */
     const swap = function (state, index) {
         const next = state.frames[index];
         const prev = state.frames[state.shown];
 
-        next.url = next.pending;
-        next.pending = null;
+        next.pending = false;
+        next.readyAt = -1;
         next.el.classList.add(CLASS.shown);
 
-        if (prev !== next) {
-            prev.el.classList.remove(CLASS.shown);
-
-            if (prev.url) {
-                URL.revokeObjectURL(prev.url);
-                prev.url = null;
-            }
-        }
+        if (prev !== next) { prev.el.classList.remove(CLASS.shown); }
 
         state.shown = index;
-        state.consecutiveErrors = 0;
         state.stats.shown += 1;
     };
 
+    /** `load` on the hidden image: schedule its reveal a few frames later, when Cohtml has drawn it. */
     const onFrameLoaded = function (state, index) {
-        if (!state.frames[index].pending) { return; }
+        const frame = state.frames[index];
 
-        swap(state, index);
+        if (!frame.pending || frame.readyAt >= 0) { return; }
+
+        frame.readyAt = state.frameCount + settings.swapDelay;
+        state.timeouts = 0;
+        state.consecutiveErrors = 0;
+        state.stats.loaded += 1;
     };
 
     const onFrameError = function (state, index) {
@@ -392,8 +429,10 @@ const ACEDoom = (function () {
 
         if (!frame.pending) { return; }
 
-        URL.revokeObjectURL(frame.pending);
-        frame.pending = null;
+        frame.pending = false;
+        frame.readyAt = -1;
+        URL.revokeObjectURL(frame.url);
+        frame.url = null;
         state.stats.errors += 1;
         state.consecutiveErrors += 1;
 
@@ -404,7 +443,7 @@ const ACEDoom = (function () {
         }
     };
 
-    /** Encode the module's frame buffer and hand it to the hidden <img>. */
+    /** Encode the module's frame buffer and hand it to the hidden image. */
     const present = function (state, now) {
         const doom = state.doom;
         const index = 1 - state.shown;
@@ -417,31 +456,37 @@ const ACEDoom = (function () {
         const png = ACEDoomPng.encodeBgra(state.encoder, pixels);
         const url = URL.createObjectURL(new Blob([png.slice(0).buffer], { type: PNG_TYPE }));
 
-        back.pending = url;
+        if (back.url) { URL.revokeObjectURL(back.url); }
+
+        back.url = url;
+        back.pending = true;
         back.since = now;
+        back.readyAt = (state.blind || !settings.waitForLoad) ? state.frameCount + settings.swapDelay : -1;
         back.el.src = url;
         doom.frameDirty = false;
         state.stats.presented += 1;
         state.stats.encodeMs += Date.now() - t0;
-
-        if (state.blind) { swap(state, index); }
     };
 
-    /** No load/error event for the pending image: assume it is there and stop waiting from now on. */
+    /** Reveal the hidden image when its time has come; give up waiting for a `load` that never arrives. */
     const watchPending = function (state, now) {
         const index = 1 - state.shown;
         const back = state.frames[index];
 
-        if (!back.pending || now - back.since < PENDING_TIMEOUT_MS) { return; }
+        if (!back.pending) { return; }
 
-        state.stats.blind += 1;
+        if (back.readyAt < 0 && now - back.since >= PENDING_TIMEOUT_MS) {
+            back.readyAt = state.frameCount;
+            state.timeouts += 1;
+            state.stats.timeouts += 1;
 
-        if (!state.blind) {
-            state.blind = true;
-            log("no load event from <img> within " + PENDING_TIMEOUT_MS + " ms; swapping frames blind from now on");
+            if (state.timeouts >= BLIND_AFTER && !state.blind) {
+                state.blind = true;
+                log("no load events from <img> for " + BLIND_AFTER + " frames in a row; revealing after " + settings.swapDelay + " frames without them");
+            }
         }
 
-        swap(state, index);
+        if (back.readyAt >= 0 && state.frameCount >= back.readyAt) { swap(state, index); }
     };
 
     const runTick = function (state) {
@@ -471,10 +516,11 @@ const ACEDoom = (function () {
     const reportStats = function (state, elapsedMs) {
         const s = state.stats;
         const summary = perSecond(s.ticks, elapsedMs) + " tics/s (" + average(s.tickMs, s.ticks) + " ms), "
-            + perSecond(s.shown, elapsedMs) + " fps shown";
+            + perSecond(s.shown, elapsedMs) + " fps";
 
         log("stats: " + summary + ", drawn " + s.drawn + ", presented " + s.presented + " (encode " + average(s.encodeMs, s.presented)
-            + " ms), errors " + s.errors + ", blind " + s.blind + ", clock " + Math.floor(state.doom.clockMs) + " ms");
+            + " ms), loaded " + s.loaded + ", errors " + s.errors + ", timeouts " + s.timeouts + (state.blind ? ", blind" : "")
+            + ", swapDelay " + settings.swapDelay + ", clock " + Math.floor(state.doom.clockMs) + " ms");
         setStatus(state, summary);
         state.stats = newStats();
     };
@@ -493,15 +539,16 @@ const ACEDoom = (function () {
         }
 
         doom.clockMs += step;
+        state.frameCount += 1;
 
         if (now - state.lastTickAt >= TIC_MS) {
             state.lastTickAt = now;
             runTick(state);
         }
 
-        if (doom.frameDirty && !state.presentingFailed) { present(state, now); }
-
         watchPending(state, now);
+
+        if (doom.frameDirty && !state.presentingFailed) { present(state, now); }
 
         if (now - state.statsAt >= STATS_EVERY_MS) {
             reportStats(state, now - state.statsAt);
@@ -528,6 +575,16 @@ const ACEDoom = (function () {
         if (state.open) { boot(state); }
     };
 
+    /** Change the presentation knobs at runtime (dev console): returns the settings in force. */
+    const tune = function (changes) {
+        Object.keys(changes || {}).forEach(function (name) {
+            if (settings[name] !== undefined) { settings[name] = changes[name]; }
+        });
+        log("tuned: swapDelay=" + settings.swapDelay + ", waitForLoad=" + settings.waitForLoad);
+
+        return settings;
+    };
+
     const setScale = function (state, scale) {
         const value = ACEUIModLoader.clamp(Math.round(scale / SCALE_STEP) * SCALE_STEP, SCALE_MIN, SCALE_MAX);
 
@@ -544,9 +601,14 @@ const ACEDoom = (function () {
 
     /** The DOOM key for a keyboard event, or null when DOOM has no use for it. */
     const doomKeyFor = function (state, e) {
+        const doom = state.doom;
         const code = e.keyCode;
 
-        if (state.doom.keys[code] !== undefined) { return state.doom.keys[code]; }
+        if (doom.keys[code] !== undefined) { return doom.keys[code]; }
+
+        if (typeof e.code === "string" && doom.named[e.code] !== undefined) { return doom.named[e.code]; }
+
+        if (typeof e.key === "string" && doom.named[e.key] !== undefined) { return doom.named[e.key]; }
 
         if (code >= LETTER_A && code <= LETTER_Z) { return code + TO_LOWER; }
 
@@ -555,6 +617,14 @@ const ACEDoom = (function () {
         if (typeof e.key === "string" && e.key.length === 1) { return e.key.charCodeAt(0); }
 
         return null;
+    };
+
+    const report = function (state, key, down) {
+        if (down) {
+            state.doom.exports.reportKeyDown(key);
+        } else {
+            state.doom.exports.reportKeyUp(key);
+        }
     };
 
     const onKey = function (state, e, down) {
@@ -571,16 +641,38 @@ const ACEDoom = (function () {
 
         const key = doomKeyFor(state, e);
 
-        if (key === null) { return; }
+        if (key === null) {
+            if (down && state.unmappedLogged < UNMAPPED_LOG_LIMIT) {
+                state.unmappedLogged += 1;
+                log("unmapped key: keyCode=" + e.keyCode + " key=" + e.key + " code=" + e.code);
+            }
+
+            return;
+        }
 
         e.preventDefault();
         e.stopPropagation();
+        report(state, key, down);
+    };
 
-        if (down) {
-            state.doom.exports.reportKeyDown(key);
-        } else {
-            state.doom.exports.reportKeyUp(key);
-        }
+    /** Mouse on the screen: left button fires, right button uses; released anywhere. */
+    const onScreenMouseDown = function (state, e) {
+        const named = state.doom.named;
+        const key = e.button === MOUSE_LEFT ? named.Control : (e.button === MOUSE_RIGHT ? named.Space : undefined);
+
+        if (!state.open || state.doom.phase !== PHASE.running || key === undefined || state.mouseKey !== null) { return; }
+
+        state.mouseKey = key;
+        e.preventDefault();
+        report(state, key, true);
+    };
+
+    const onMouseUp = function (state) {
+        if (state.mouseKey === null) { return; }
+
+        if (state.doom.phase === PHASE.running) { report(state, state.mouseKey, false); }
+
+        state.mouseKey = null;
     };
 
     const onClick = function (state, e) {
@@ -605,6 +697,8 @@ const ACEDoom = (function () {
             keyDown: function (e) { onKey(state, e, true); },
             keyUp: function (e) { onKey(state, e, false); },
             click: function (e) { onClick(state, e); },
+            screenDown: function (e) { onScreenMouseDown(state, e); },
+            mouseUp: function () { onMouseUp(state); },
             loads: state.frames.map(function (frame, index) {
                 return function () { onFrameLoaded(state, index); };
             }),
@@ -614,7 +708,9 @@ const ACEDoom = (function () {
         };
         window.addEventListener("keydown", state.handlers.keyDown, true);
         window.addEventListener("keyup", state.handlers.keyUp, true);
+        window.addEventListener("mouseup", state.handlers.mouseUp);
         root.addEventListener("click", state.handlers.click);
+        state.screen.addEventListener("mousedown", state.handlers.screenDown);
         state.frames.forEach(function (frame, index) {
             frame.el.addEventListener("load", state.handlers.loads[index]);
             frame.el.addEventListener("error", state.handlers.errors[index]);
@@ -639,7 +735,9 @@ const ACEDoom = (function () {
         if (state.handlers) {
             window.removeEventListener("keydown", state.handlers.keyDown, true);
             window.removeEventListener("keyup", state.handlers.keyUp, true);
+            window.removeEventListener("mouseup", state.handlers.mouseUp);
             state.root.removeEventListener("click", state.handlers.click);
+            state.screen.removeEventListener("mousedown", state.handlers.screenDown);
             state.frames.forEach(function (frame, index) {
                 frame.el.removeEventListener("load", state.handlers.loads[index]);
                 frame.el.removeEventListener("error", state.handlers.errors[index]);
@@ -650,10 +748,9 @@ const ACEDoom = (function () {
         state.frames.forEach(function (frame) {
             if (frame.url) { URL.revokeObjectURL(frame.url); }
 
-            if (frame.pending) { URL.revokeObjectURL(frame.pending); }
-
             frame.url = null;
-            frame.pending = null;
+            frame.pending = false;
+            frame.readyAt = -1;
         });
     };
 
@@ -668,6 +765,10 @@ const ACEDoom = (function () {
         SCALE_MAX: SCALE_MAX,
         SCALE_STEP: SCALE_STEP,
         PENDING_TIMEOUT_MS: PENDING_TIMEOUT_MS,
+        BLIND_AFTER: BLIND_AFTER,
+        SWAP_DELAY_FRAMES: SWAP_DELAY_FRAMES,
+        settings: settings,
+        tune: tune,
         ERROR_LIMIT: ERROR_LIMIT,
         PHASE: PHASE,
         CLASS: CLASS,

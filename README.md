@@ -29,13 +29,20 @@ Cohtml UI, with no executable and no game file touched.
   and its URL parser caps `data:` URLs at 2048 characters. What it does have is
   `Blob`, `URL.createObjectURL` and a PNG decoder. So `doom/png.js` turns each
   frame into a truecolour PNG with stored (uncompressed) deflate blocks, the PNG
-  becomes a Blob, the Blob an object URL on one of two `<img>` elements, swapped
-  once the new one has loaded. The module outputs 640x400 as doubled pixels; the
+  becomes a Blob, the Blob an object URL that is set as the src of one `<img>`.
+  The engine keeps the old picture until the new one is decoded, so nothing is
+  hidden or swapped (two images toggled on `load` flickered in game: Cohtml
+  fires `load` before the image is drawable). The next frame is presented once
+  `load` arrives, or without waiting if load events stop coming for three
+  frames. The module outputs 640x400 as doubled pixels; the
   encoder samples it back to 320x200 losslessly. Constant parts of the PNG are
   written once; a frame costs a pixel copy, an Adler-32 and a CRC-32.
 - **Keys.** While the panel is open, keyboard events are mapped to DOOM keys and
   swallowed at the page level (the sim still sees them natively). The module
-  exports its key codes, so the mapping is read from it at start.
+  exports its key codes, so the mapping is read from it at start; modifiers are
+  matched by legacy keyCode (both the generic and the left/right codes) and by
+  name. Keys DOOM cannot use are logged a few times as `unmapped key:` lines so
+  the engine's codes can be learnt from the game log.
 
 ## Controls
 
@@ -44,8 +51,8 @@ Cohtml UI, with no executable and no game file touched.
 | `Insert` | show / hide the panel (hidden = paused). Off by default. |
 | `Delete` | DOOM's Escape (menu). The real Escape is left alone: it pauses the sim and reloads the HUD page. |
 | arrows | move / turn |
-| `Ctrl` | fire |
-| `Space` | use (doors, switches) |
+| `Ctrl`, or left mouse button on the screen | fire |
+| `Space`, or right mouse button on the screen | use (doors, switches) |
 | `Shift` | run |
 | `,` `.` | strafe left / right |
 | `Tab` | automap |

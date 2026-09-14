@@ -109,15 +109,17 @@
 
     t("attach: closed by default, markup once, hint names the keys, keys mapped from the KEY_* globals", function () {
         ok(root.classList.contains("ace-doom"), "root class"); ok(root.classList.contains("dm-closed"), "closed");
-        eq(state.open, false); eq(root.querySelectorAll(".dm-frame").length, 2, "two frames");
+        eq(state.open, false); eq(root.querySelectorAll(".dm-frame").length, 2, "two stacked frame images"); eq(root.querySelectorAll(".dm-frame.dm-shown").length, 1, "one revealed");
         eq(root.querySelector(".dm-title").textContent, "ACE DOOMdev", "title + version outside the game");
         ok(root.querySelector(".dm-hint").textContent.indexOf("Insert show/hide") === 0, "hint");
         eq(root.style.fontSize, "2rem", "default scale"); eq(root.style.visibility, "hidden", "hidden until positioned");
         ok(window.__log.some(function (l) { return l.indexOf(me.prefix + " attached, closed, scale 2, toggle key Insert, module ") === 0; }), "attach log");
-        const map = ACEDoom.keyMap({ KEY_LEFTARROW: { value: 172 }, KEY_ESCAPE: { value: 27 }, KEY_FIRE: { value: 157 }, junk: 3 });
-        eq(map[37], 172, "left arrow"); eq(map[46], 27, "Delete stands in for Escape"); eq(map[17], 157, "Ctrl fires");
-        eq(map[27], undefined, "the real Escape is never mapped");
-        const fake = { doom: { keys: map } };
+        const map = ACEDoom.keyMap({ KEY_LEFTARROW: { value: 172 }, KEY_ESCAPE: { value: 27 }, KEY_FIRE: { value: 157 }, KEY_USE: { value: 162 }, junk: 3 });
+        eq(map.keys[37], 172, "left arrow"); eq(map.keys[46], 27, "Delete stands in for Escape"); eq(map.keys[17], 157, "Ctrl fires");
+        eq(map.keys[162], 157, "left Ctrl by VK code fires too"); eq(map.named.ControlRight, 157, "right Ctrl by name"); eq(map.named[" "], 162, "space by key value");
+        eq(map.keys[27], undefined, "the real Escape is never mapped");
+        const fake = { doom: map };
+        eq(ACEDoom.doomKeyFor(fake, { keyCode: 0, key: "Control", code: "ControlLeft" }), 157, "modifiers resolve by name when the keyCode is odd");
         eq(ACEDoom.doomKeyFor(fake, { keyCode: 65, key: "a" }), 97, "letters are lower-case ascii");
         eq(ACEDoom.doomKeyFor(fake, { keyCode: 53, key: "5" }), 53, "digits"); eq(ACEDoom.doomKeyFor(fake, { keyCode: 46 }), 27, "special");
         eq(ACEDoom.doomKeyFor(fake, { keyCode: 112, key: "F1" }), null, "unknown keys are left alone");
@@ -137,6 +139,14 @@
         if (cond()) { then(); return; }
         if (tries <= 0) { then(); return; }
         setTimeout(function () { until(cond, then, tries - 1); }, 20);
+    };
+
+    /** Step animation frames (one per 5 ms) until cond holds; then() runs either way after the tries. */
+    const stepUntil = function (cond, then, tries) {
+        if (cond()) { then(); return; }
+        if ((tries === undefined ? 200 : tries) <= 0) { then(); return; }
+        nextFrame();
+        setTimeout(function () { stepUntil(cond, then, (tries === undefined ? 200 : tries) - 1); }, 5);
     };
 
     const afterFrames = function (count, then) {
@@ -162,8 +172,9 @@
                 const s = state.stats;
                 ok(s.ticks >= 15 && s.ticks <= 25, "ticks " + s.ticks); ok(s.drawn >= 1, "drawn " + s.drawn);
                 ok(s.presented >= 2, "presented " + s.presented); ok(s.shown >= 2, "shown " + s.shown);
-                eq(s.errors, 0, "errors"); eq(s.blind, 0, "blind swaps"); ok(state.doom.clockMs >= 40 * 16, "clock advanced by the frames (" + state.doom.clockMs + ")");
-                ok(root.querySelector(".dm-frame.dm-shown").src.indexOf("blob:") === 0, "shown frame is a blob URL");
+                eq(s.errors, 0, "errors"); eq(s.timeouts, 0, "timeouts"); eq(state.blind, false, "load events arrive"); ok(state.doom.clockMs >= 40 * 16, "clock advanced by the frames (" + state.doom.clockMs + ")");
+                ok(s.loaded >= 2, "load events " + s.loaded); ok(root.querySelector(".dm-frame.dm-shown").src.indexOf("blob:") === 0, "the shown frame is a blob URL");
+                ok(state.frames.every(function (f) { return f.url === null || f.url.indexOf("blob:") === 0; }), "frame URLs are blob URLs");
                 extra.push("40 frames: " + JSON.stringify(s));
             });
 
@@ -174,13 +185,40 @@
                 eq(state.doom.phase, "running", "still running");
             });
 
-            until(function () { return !state.frames[1 - state.shown].pending; }, function () {
+            t("mouse: left button on the screen fires, right button uses, released anywhere", function () {
+                const calls = [];
+                const real = { down: state.doom.exports.reportKeyDown, up: state.doom.exports.reportKeyUp };
+                const screen = root.querySelector(".dm-screen");
+                state.doom.exports.reportKeyDown = function (k) { calls.push(["down", k]); };
+                state.doom.exports.reportKeyUp = function (k) { calls.push(["up", k]); };
+                screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+                screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }));
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+                screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }));
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+                state.doom.exports.reportKeyDown = real.down; state.doom.exports.reportKeyUp = real.up;
+                const fire = state.doom.named.Control, use = state.doom.named.Space;
+                eq(JSON.stringify(calls), JSON.stringify([["down", fire], ["up", fire], ["down", use], ["up", use]]), "one button at a time, released on window mouseup");
+                ok(screen.hasAttribute("data-nodrag"), "pressing the screen does not drag the panel");
+            });
+
+            state.presentingFailed = true;   // hold automatic presents so the pending frame can settle and one frame can be presented by hand
+            stepUntil(function () { return !state.frames[1 - state.shown].pending; }, function () {
                 const copy = new Uint8Array(state.doom.memory.buffer.slice(state.doom.framePtr, state.doom.framePtr + state.doom.width * state.doom.height * 4));
                 const shownBefore = state.shown;
+                const countBefore = state.frameCount;
+                let loadedAt = -1;
                 ACEDoom.present(state, frame);
-                until(function () { return state.shown !== shownBefore; }, function () {
-                    t("a shown frame decodes to the module's pixels", function () {
-                        eq(state.shown, 1 - shownBefore, "swapped after load");
+                ok(state.frames[1 - shownBefore].pending && state.frames[1 - shownBefore].readyAt === -1, "waits for load");
+                stepUntil(function () {
+                    if (loadedAt < 0 && state.frames[1 - shownBefore].readyAt >= 0) { loadedAt = state.frameCount; }
+                    return state.shown !== shownBefore;
+                }, function () {
+                    t("a frame is revealed swapDelay frames after its load and decodes to the module's pixels", function () {
+                        eq(state.shown, 1 - shownBefore, "revealed"); ok(loadedAt > countBefore, "load came after present");
+                        eq(state.frameCount - loadedAt, ACEDoom.settings.swapDelay, "revealed exactly swapDelay frames after load");
+                        ok(root.querySelector(".dm-frame.dm-shown") === state.frames[state.shown].el, "shown class follows"); eq(state.frames[1 - state.shown].el.classList.contains("dm-shown"), false, "old one hidden");
+                        state.presentingFailed = false;
                         const img = state.frames[state.shown].el;
                         const enc = state.encoder, step = enc.step, sw = state.doom.width;
                         eq(step, 2, "the 640x400 module output is 320x200 doubled"); eq(enc.width, 320); eq(enc.height, 200);
@@ -217,7 +255,7 @@
                         const cancelled = window.__clock.cancelled;
                         ACEDoom.detach(state);
                         eq(window.__clock.cancelled, cancelled + 1); eq(state.loop.running, false);
-                        ok(state.frames.every(function (f) { return f.url === null && f.pending === null; }), "urls released");
+                        ok(state.frames.every(function (f) { return f.url === null && f.pending === false; }), "urls released");
                         keyEvent("keydown", 45); eq(state.open, false, "toggle key released");
                     });
 
