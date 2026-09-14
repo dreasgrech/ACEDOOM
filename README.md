@@ -103,12 +103,42 @@ own start-up messages, then a `stats:` line every 5 s while the panel is open.
 python -m unittest discover -s tests -v
 ```
 
-## Licences
+## Licences and attributions
 
-`third_party/doom.wasm` and the generated `doom/doomjs.js` are GPL-2.0 (id
-Software's DOOM source as built by jacobenget/doom.wasm) and embed the freely
-distributable DOOM shareware WAD. The host, encoder, stylesheet and tools in
-this repository are ours.
+The host (`doom.js`), the PNG encoder (`png.js`), the CSS and every tool in
+`tools/` are ours. Everything else, with its source:
+
+- **DOOM engine.** `third_party/doom.wasm` and the generated `doom/doomjs.js`
+  are GPL-2.0. They are [jacobenget/doom.wasm](https://github.com/jacobenget/doom.wasm)
+  v0.1.0 (which vendors [ozkl/doomgeneric](https://github.com/ozkl/doomgeneric),
+  over id Software's DOOM source, GPL-2.0). Because the module is GPL-2.0, this
+  repo carries that licence and the corresponding source (the module input and
+  the build tools below).
+- **DOOM shareware WAD** (`DOOM1.WAD`), embedded in the module: the levels,
+  sprites, sound effects and music. Copyright id Software, Inc., freely
+  distributable as the shareware data. jacobenget's build fetches it from
+  `https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad`.
+- **Sound effects**: the `DS*` lumps `tools/extract_sounds.py` pulls from that
+  shareware WAD. id Software.
+- **Music** (E1M1 etc.): the OGG renders from
+  [farrelke/console-doom](https://github.com/farrelke/console-doom) (ISC
+  wrapper). The compositions are the DOOM soundtrack by Bobby Prince, copyright
+  id Software; the shareware tracks are the freely distributable ones.
+- **Build tools** (needed only to rebuild, not shipped):
+  [WASI SDK 24](https://github.com/WebAssembly/wasi-sdk) (clang 18.1.2,
+  Apache-2.0 with LLVM exceptions) and
+  [Binaryen version_123](https://github.com/WebAssembly/binaryen) (`wasm2js`,
+  Apache-2.0).
+- **FMOD** Studio 2.03.13 and FMOD Engine, Firelight Technologies Pty Ltd,
+  `https://www.fmod.com/download`. Proprietary FMOD EULA; used to author the
+  bank; not redistributed here.
+- **Kunos FMOD modding template and `gui.bank`**: the FMOD Studio project the
+  bank is built from and the game's own UI bank we override, both from the
+  Assetto Corsa EVO SDK (`C:\AssettoEvoSDKDocumentation`). Kunos Simulazioni.
+  Excluded from the repo (`.gitignore`), copy from the SDK to rebuild.
+
+"DOOM" is a registered trademark of ZeniMax Media Inc.; this mod is unaffiliated
+and unapproved.
 
 ## Sound: through the game's own UI bank
 
@@ -135,7 +165,8 @@ from five fixed banks. So DOOM's sounds live **inside the game's UI bank**:
   keeping every event, name and index, and fixing the container sizes, the
   32-byte data alignment and the `SNDH` record that tells FMOD where the
   container is (each of those cost a silent launch). The stock menu clicks
-  and music are untouched.
+  are untouched. `sounds.json` `musicSwaps` also replaces one long garage
+  sample with a DOOM music track (see Music below).
 - `build_audio.py --install` packs that `gui.bank` as
   `ACEUIModLoaderMods-doom.kspkg` through the loader's `pack_kspkg.py`, named
   to list after the loader package, padded so both overrides win. About
@@ -144,9 +175,9 @@ from five fixed banks. So DOOM's sounds live **inside the game's UI bank**:
   DOOM sound (`doom/audiomap.js`, generated from `sounds.json`): volume above
   24 of 127, at most 6 requests per frame. The livery-editor event plays seven
   samples, one per GUI type (the type-to-sample map was verified in game with
-  `snippets/guisounddisc.js`; `GUI_PART_REMOVE` plays nothing), so seven DOOM
-  sounds are heard and their relatives share the slot. No music: the game's own
-  tracks would have to go.
+  `snippets/guisounddisc.js`; `GUI_PART_REMOVE` plays nothing), so six DOOM
+  effects are heard and their relatives share the slot, and the seventh
+  (`GUI_PART_APPLY`) carries the music.
 
 | GUI type | stock sample | DOOM sound in its place | also sent there |
 |---|---|---|---|
@@ -154,14 +185,44 @@ from five fixed banks. So DOOM's sounds live **inside the game's UI bank**:
 | `GUI_PAINT_REMOVE` | spray paint 07 | shotgun | super shotgun |
 | `GUI_STICKER_APPLY` | can spray paint | door slide | door close, blaze doors, switches, lifts |
 | `GUI_STICKER_REMOVE` | paper wrap | player pain grunt | oof, enemy pain |
-| `GUI_PART_APPLY` | pneumatic wrench | pickup pop | item and weapon pickups |
+| `GUI_PART_APPLY` | pneumatic wrench | **music** (E1M1) | -- carries the level track, see Music |
 | `GUI_WHEEL_APPLY` | ext gun install | death gurgle | enemy and player deaths |
 | `GUI_WHEEL_REMOVE` | ext gun remove | barrel explosion | rocket blasts |
 
-The paper-wrap slot swallows samples shorter than about 0.2 s, so the pickup
-blip goes in the pneumatic slot instead, and imp fireball impacts are left
-silent because they read as explosions.
+The paper-wrap slot swallows samples shorter than about 0.2 s. The pickup
+blip used to live in the pneumatic slot, but that slot now carries the music,
+so the pickup sound is dropped. Imp fireball impacts are left silent because
+they read as explosions.
 
 Side effect while installed: the livery editor's paint, sticker, part and
-wheel sounds are DOOM's. Every game update that changes `gui.bank` needs the
-package rebuilt (`build_audio.py --install` does it from the installed game).
+wheel sounds are DOOM's (its "part apply" now plays DOOM music). Every game
+update that changes `gui.bank` needs the package rebuilt (`build_audio.py
+--install` does it from the installed game).
+
+### Music
+
+The dedicated UI music bus (`gui/gui_music`) is faded to zero during a driving
+session, so tracks routed there play only in menus, never in the HUD while
+racing. What plays music **in-session** is the same trick as the effects: a
+DOOM track is swapped into a garage effect sample. `GUI_PART_APPLY` (the
+pneumatic-wrench sample) is the one garage slot that plays its sample as a
+one-shot to its full length; the menu-click slots truncate anything long. So
+`sounds.json` `musicSwaps` puts `d_e1m1` (about 103 s) in that sample, and the
+host fires `GUI_PART_APPLY` when a DOOM level starts, re-firing every 103 s to
+loop. The garage effect bus is not faded and does not steal voices, so the
+music and the six gunfire/door effects play together.
+
+Limits, all properties of the game's audio engine rather than the mod:
+
+- **One track for every level.** There is one garage slot, so all levels play
+  E1M1. `sounds.json` maps E1M1-E1M9, but every entry currently points at E1M1
+  (the deliberate experiment: any music heard is unmistakably ours). The
+  intended final build fans them out per level.
+- **No hard stop.** A UI sound cannot be stopped once fired, so closing the
+  DOOM panel can leave the music playing for up to its ~103 s tail. The host
+  stops re-firing on close; it cannot cut the current instance.
+- **Demo screen thrash.** DOOM's attract/demo screen re-requests its music
+  every frame. The host (`doom.js`) accepts a music start only for a track it
+  has a slot for and only when nothing is already playing, ignores DOOM's stop
+  requests, and stops only when the panel closes, so the loop starts once
+  instead of restarting constantly.
