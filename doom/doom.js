@@ -209,6 +209,7 @@ const ACEDoom = (function () {
             presentingFailed: false,
             open: false,
             toggleDown: false,
+            focusUnbind: null,      // click-to-focus watcher while the panel is open
             mouseKey: null,             // DOOM key held by a mouse button on the screen
             unmappedLogged: 0,
             soundsLogged: 0,
@@ -659,6 +660,36 @@ const ACEDoom = (function () {
         }
     };
 
+    /**
+     * DOOM's keys are movement and fire, and the game must not also read them as car
+     * controls -- the arrow keys would otherwise shove the driver's seat about while you
+     * play. But holding the keyboard for as long as the panel is open would mean you
+     * could never leave DOOM open and drive, so it is click-to-focus: clicking inside the
+     * panel takes the keyboard, clicking anywhere else gives it back. Opening the panel
+     * takes it too, since you just asked for DOOM.
+     *
+     * ACEUIModLoader.input counts holders, so this neither steals the keyboard from
+     * another mod nor hands it back while one still wants it (the dev console holds it
+     * while its prompt has focus).
+     */
+    const releaseKeys = function (state) {
+        if (!state.focusUnbind) { return; }
+
+        state.focusUnbind();            // unbinds the click watcher and releases
+        state.focusUnbind = null;
+    };
+
+    const grabKeys = function (state) {
+        const input = ACEUIModLoader.input;
+
+        releaseKeys(state);
+
+        if (!input) { return; }
+
+        input.capture(me.name);
+        state.focusUnbind = input.bindClickFocus(state.root, me.name);
+    };
+
     const setOpen = function (state, open) {
         state.open = Boolean(open);
         setClass(state.root, CLASS.closed, !state.open);
@@ -666,8 +697,10 @@ const ACEDoom = (function () {
         state.lastTickAt = 0;
 
         if (state.open) {
+            grabKeys(state);
             boot(state);
         } else {
+            releaseKeys(state);
             stopMusic(state);
         }
     };
@@ -837,6 +870,7 @@ const ACEDoom = (function () {
     const detach = function (state) {
         ACEUIModLoader.loop.stop(state.loop);
         ACEUIModLoader.panel.detach(state.panel);
+        releaseKeys(state);          // never leave the game unable to read its controls
 
         if (state.handlers) {
             window.removeEventListener("keydown", state.handlers.keyDown, true);
