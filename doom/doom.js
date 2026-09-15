@@ -896,4 +896,4 @@ const ACEDoom = (function () {
 }());
 
 /* Attach to #doom: the loader creates it in game, the preview page carries it. */
-ACEUIModLoader.mod("doom").mount(ACEDoom.attach);
+ACEUIModLoader.mod("doom").mount(ACEDoom.attach, ACEDoom.detach);
