@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ACE DOOM save probe</title>
+<style>
+  body { margin: 0; background: #222; color: #ddd; font: 12px monospace; }
+  .absolutecenter { position: relative; width: 1600px; height: 900px; overflow: hidden; }
+  #results { white-space: pre; }
+</style>
+<script src="../../ACEUIModLoader/tests/lib/doubles.js"></script>
+<script src="../../ACEUIModLoader/tests/lib/lib.js"></script>
+<link rel="stylesheet" type="text/css" href="../doom/doom.css">
+<script src="../doom/png.js"></script>
+<script src="../doom/saves.js"></script>
+<script src="../doom/audiomap.js"></script>
+<script src="../doom/doom.js"></script>
+</head>
+<body>
+<div class="absolutecenter" id="center"></div>
+<pre id="results"></pre>
+<div id="done"></div>
+<script>
+(function () {
+    const lines = [];
+    let frame = 1000;
+
+    // write after every step, so a stall still shows how far it got
+    const say = function (text) {
+        lines.push(text);
+        document.getElementById("results").textContent = lines.join("\n") + "\nSUMMARY 1/1";
+    };
+    const finish = function () { document.getElementById("done").textContent = "DONE"; };
+
+    window.onerror = function (message, url, line) {
+        say("ERROR " + message + " at line " + line);
+        finish();
+        return true;
+    };
+
+    const nextFrame = function () { frame += 16; window.__clock.step(frame); };
+    const afterFrames = function (count, then) {
+        if (count <= 0) { then(); return; }
+        nextFrame();
+        setTimeout(function () { afterFrames(count - 1, then); }, 0);
+    };
+    const until = function (cond, then, tries) {
+        if (cond()) { then(); return; }
+        if (tries <= 0) { then(); return; }
+        setTimeout(function () { until(cond, then, tries - 1); }, 20);
+    };
+
+    const root = document.createElement("div");
+    root.id = "doom";
+    root.setAttribute(ACEUIModLoader.loader.MOUNTED_ATTR, "");
+    document.getElementById("center").appendChild(root);
+    const state = ACEDoom.attach(root);
+
+    const ins = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+    Object.defineProperty(ins, "keyCode", { value: 45 });
+    window.dispatchEvent(ins);
+    say("panel opened, phase " + state.doom.phase);
+
+    // count the module's calls into gameSaving: M_ReadSaveStrings hits sizeOfSave for
+    // every slot whenever the save or load menu opens, so a non-zero count proves we got there
+    let saveQueries = 0;
+    const realSaves = state.saves;
+    Object.defineProperty(state, "saves", {
+        get: function () { saveQueries += 1; return realSaves; },
+        set: function (value) { return value; }
+    });
+
+    const mark = function (what) {
+        say(what + ": sounds=" + state.stats.sounds + " music=" + (state.music ? state.music.gui : "none")
+            + " ticks=" + state.stats.ticks + " slots=" + Object.keys(realSaves).length
+            + " savecalls=" + saveQueries);
+    };
+
+    /** Run frames until cond holds (or `tries` run out); then(true|false). */
+    const waitFor = function (cond, tries, then) {
+        if (cond()) { then(true); return; }
+        if (tries <= 0) { then(false); return; }
+        nextFrame();
+        setTimeout(function () { waitFor(cond, tries - 1, then); }, 0);
+    };
+
+    /** Press a DOOM key, let `frames` frames run, then continue. */
+    const press = function (key, frames, then) {
+        // the module keeps a pressed-key cache and diffs it each tic, so a key pressed and
+        // released within one turn is never seen: hold it across several frames
+        state.doom.exports.reportKeyDown(key);
+        afterFrames(6, function () {
+            state.doom.exports.reportKeyUp(key);
+            afterFrames(frames, then);
+        });
+    };
+    /** [key, frames, label] in order. */
+    const sequence = function (steps, then) {
+        if (!steps.length) { then(); return; }
+
+        const step = steps[0];
+        press(step[0], step[1], function () {
+            if (step[2]) { mark(step[2]); }
+            sequence(steps.slice(1), then);
+        });
+    };
+
+    const measure = function () {
+        const slots = Object.keys(realSaves);
+        say("slots written: " + JSON.stringify(slots));
+
+        slots.forEach(function (slot) {
+            const bytes = realSaves[slot];
+            const text = ACEDoomSaves.encode(bytes);
+            const back = ACEDoomSaves.decode(text);
+            let identical = back !== null && back.length === bytes.length;
+            if (identical) {
+                for (let i = 0; i < bytes.length; i += 1) {
+                    if (bytes[i] !== back[i]) { identical = false; break; }
+                }
+            }
+            let name = "";
+            for (let i = 0; i < 24 && bytes[i]; i += 1) { name += String.fromCharCode(bytes[i]); }
+            let lastNonZero = bytes.length - 1;
+            while (lastNonZero > 0 && bytes[lastNonZero] === 0) { lastNonZero -= 1; }
+            say("slot " + slot + ": raw " + bytes.length + " bytes, last non-zero byte at " + lastNonZero
+                + ", name " + JSON.stringify(name) + " -> " + text.length + " chars stored ("
+                + (text.length / bytes.length).toFixed(3) + "x of raw), round-trip "
+                + (identical ? "identical" : "MISMATCH"));
+        });
+
+        const stored = JSON.parse(localStorage.getItem("acedoom.saves") || "null");
+        say("localStorage acedoom.saves: " + (stored ? JSON.stringify(stored).length + " chars of JSON" : "nothing"));
+
+        if (stored) {
+            const fresh = { saves: {} };
+            const found = ACEDoom.unpackSaves(fresh, stored);
+            const same = slots.every(function (s) {
+                const a = realSaves[s];
+                const b = fresh.saves[s];
+                if (!b || a.length !== b.length) { return false; }
+                for (let i = 0; i < a.length; i += 1) { if (a[i] !== b[i]) { return false; } }
+                return true;
+            });
+            say("reloaded into a fresh state: " + found + " slot(s), byte-identical = " + same);
+        }
+
+        window.__log.forEach(function (l) {
+            if (l.indexOf("slot ") > 0 || l.indexOf("saved games") > 0 || l.indexOf("error") > 0) { say("log: " + l); }
+        });
+        finish();
+    };
+
+    until(function () { return state.doom.phase === "running" || state.doom.phase === "failed"; }, function () {
+        if (state.doom.phase !== "running") { say("module did not start: " + state.doom.phase); finish(); return; }
+
+        const named = state.doom.named;
+        const ESC = named.Delete;
+        const ENTER = named.Enter;
+        const DOWN = named.ArrowDown;
+        const namedUp = named.ArrowUp;
+        say("running. escape=" + ESC + " enter=" + ENTER + " down=" + DOWN);
+
+        afterFrames(60, function () {
+            mark("title");
+            // First: Load Game from the title screen. M_LoadGame calls M_ReadSaveStrings with
+            // no guard at all, so this separates "can we drive menus" from "can we save".
+            sequence([[ESC, 20, "esc"], [DOWN, 10, ""], [DOWN, 10, "on load game"], [ENTER, 30, "LOAD MENU"]], function () {
+                sequence([[ESC, 20, "menu closed"]], function () {
+                    startGame();
+                });
+            });
+        });
+
+        const startGame = function () {
+            // menu -> New Game -> episode 1 -> skill -> level. Reopening puts the cursor on
+            // Load Game (where we left it), so go back up to New Game first.
+            sequence([[ESC, 20, "esc"], [namedUp, 10, ""], [namedUp, 10, "on new game"]], function () {
+            sequence([[ENTER, 20, "new game"], [ENTER, 20, "episode"], [ENTER, 20, "skill"]], function () {
+                // the level is loading; DOOM starting its music is the signal that it is in
+                waitFor(function () { return Boolean(state.music); }, 400, function (ok) {
+                    mark(ok ? "level started" : "level never started");
+                    afterFrames(60, function () {
+                        // menu -> down 3 to Save Game -> slot 1 -> name -> confirm
+                        sequence([[ESC, 20, "escape again"], [DOWN, 8, ""], [DOWN, 8, ""], [DOWN, 8, "on save game"],
+                                  [ENTER, 30, "save menu"], [ENTER, 20, "slot picked"],
+                                  [110, 8, ""], [101, 8, ""], [119, 8, "typed"], [ENTER, 200, "confirmed"]], measure);
+                    });
+                });
+            });
+            });
+        };
+    }, 600);
+}());
+</script>
+</body>
+</html>

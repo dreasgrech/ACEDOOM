@@ -13,6 +13,7 @@
 <script src="../../ACEUIModLoader/tests/lib/lib.js"></script>
 <link rel="stylesheet" type="text/css" href="../doom/doom.css">
 <script src="../doom/png.js"></script>
+<script src="../doom/saves.js"></script>
 <script src="../doom/audiomap.js"></script>
 <script src="../doom/doom.js"></script>
 </head>
@@ -295,6 +296,84 @@
                         eq(ACEUIModLoader.settings.get("doom", "scale"), 2.5, "persisted through the settings store");
                         ACEDoom.setScale(state, 10); eq(state.scale, 4, "clamped high"); ACEDoom.setScale(state, 0); eq(state.scale, 1, "clamped low");
                         root.querySelector("[data-action=close]").click(); eq(state.open, false, "x closes");
+                    });
+
+                    t("saves: the codec round-trips exactly, squashes zero runs and refuses junk", function () {
+                        const zeros = new Uint8Array(30000);
+                        const text = ACEDoomSaves.encode(zeros);
+                        ok(text.length < 1000, "30000 zero bytes compact to " + text.length + " characters");
+                        const back = ACEDoomSaves.decode(text);
+                        eq(back.length, 30000, "length restored");
+                        ok(back.every(function (b) { return b === 0; }), "content restored");
+
+                        // save-shaped: repeating structures with a zero tail, then real noise
+                        const shaped = new Uint8Array(30000);
+                        let seed = 2463534242;
+                        const rnd = function (n) {
+                            seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0;
+                            return seed % n;
+                        };
+                        for (let i = 0; i < 24000; i += 4) { shaped[i] = rnd(200); }
+                        const shapedText = ACEDoomSaves.encode(shaped);
+                        const shapedBack = ACEDoomSaves.decode(shapedText);
+                        eq(shapedBack.length, shaped.length, "shaped length");
+                        let same = true;
+                        for (let i = 0; i < shaped.length; i += 1) { if (shaped[i] !== shapedBack[i]) { same = false; break; } }
+                        ok(same, "shaped content is byte-identical");
+
+                        eq(ACEDoomSaves.decode(""), null, "empty");
+                        eq(ACEDoomSaves.decode("!!!!"), null, "not base64");
+                        eq(ACEDoomSaves.decode("AAAA"), null, "wrong format byte");
+                        eq(ACEDoomSaves.decode(shapedText.slice(0, 8)), null, "truncated stream");
+                    });
+
+                    t("saves: the gameSaving imports read and write the module's memory and report the length back", function () {
+                        const before = Object.keys(state.saves).length;
+                        eq(ACEDoom.sizeOfSave(state, 3), 0, "an empty slot has no size");
+                        eq(ACEDoom.readSave(state, 3, 1024), 0, "and nothing to read");
+
+                        // write a recognisable buffer through the module's memory, as the module would
+                        const at = 4096;
+                        const length = 600;
+                        const memory = new Uint8Array(state.doom.memory.buffer, at, length);
+                        for (let i = 0; i < length; i += 1) { memory[i] = (i * 7) & 255; }
+                        eq(ACEDoom.writeSave(state, 3, at, length), length, "writeSaveGame returns the length it was given");
+                        eq(ACEDoom.sizeOfSave(state, 3), length, "the slot now has that size");
+                        eq(state.savesDirty, true, "and the frame loop has something to store");
+
+                        // reading it back must land in the module's memory, byte for byte
+                        const to = 8192;
+                        eq(ACEDoom.readSave(state, 3, to), length, "readSaveGame reports what it copied");
+                        const copy = new Uint8Array(state.doom.memory.buffer, to, length);
+                        let same = true;
+                        for (let i = 0; i < length; i += 1) { if (copy[i] !== ((i * 7) & 255)) { same = false; break; } }
+                        ok(same, "the bytes reached the module unchanged");
+                        eq(Object.keys(state.saves).length, before + 1, "one slot used");
+                    });
+
+                    t("saves: slots survive a store and reload, and clearing empties both stores", function () {
+                        ACEDoom.flushSaves(state);
+                        eq(state.savesDirty, false, "stored");
+                        const stored = JSON.parse(localStorage.getItem("acedoom.saves"));
+                        ok(stored && stored.slots && stored.slots["3"], "localStorage holds the slot");
+                        ok(state.savedChars > 0, "and the size is known for the settings pane");
+
+                        const fresh = { saves: {} };
+                        const found = ACEDoom.unpackSaves(fresh, stored);
+                        eq(found.slots, 1, "one slot restored into a fresh state");
+                        eq(fresh.saves["3"].length, state.saves["3"].length, "same length");
+                        let same = true;
+                        for (let i = 0; i < fresh.saves["3"].length; i += 1) {
+                            if (fresh.saves["3"][i] !== state.saves["3"][i]) { same = false; break; }
+                        }
+                        ok(same, "byte-identical after a round trip through the store");
+
+                        eq(ACEDoom.unpackSaves(fresh, null).slots, 0, "nothing stored restores nothing");
+                        eq(ACEDoom.unpackSaves(fresh, { v: 99, slots: {} }).slots, 0, "a format we do not know is ignored");
+
+                        ACEDoom.clearSaves();
+                        eq(Object.keys(state.saves).length, 0, "slots gone");
+                        eq(localStorage.getItem("acedoom.saves"), null, "localStorage cleared");
                     });
 
                     t("detach stops the loop, releases listeners and object URLs", function () {

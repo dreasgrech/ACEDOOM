@@ -74,7 +74,7 @@ class DoomContractTests(unittest.TestCase):
         with open(os.path.join(MOD, "mod.json"), encoding="utf-8") as f:
             info = json.load(f)
         self.assertEqual(info["files"], ["doomjs.js"], "the JavaScript build ships; the game exposes no WebAssembly")
-        self.assertEqual(info["scripts"], ["png.js", "audiomap.js", "doom.js"], "the encoder and the audio map load before the host")
+        self.assertEqual(info["scripts"], ["png.js", "saves.js", "audiomap.js", "doom.js"], "the encoder, save codec and audio map load before the host")
         self.assertGreater(os.path.getsize(WASM), 4_000_000, "the shareware WAD is embedded")
         imports = wasm_imports(WASM)
         self.assertEqual(len(imports), 13, "upstream's ten plus ACEDOOM's three audio hooks (tools/build_wasm.py)")
@@ -94,6 +94,17 @@ class DoomContractTests(unittest.TestCase):
         self.assertIsNone(re.search(r"^(import|export) ", body, re.M), "classic script, not an ES module")
         self.assertTrue(body.rstrip().endswith("return asmFunc;\n}());"), "the factory is the global")
         self.assertNotIn("WebAssembly.", self.js, "the host never touches WebAssembly")
+
+    def test_saving_is_implemented_rather_than_stubbed_out(self):
+        """doom.wasm leaves saving to its host; returning 0 from these is what "no saving" looks like."""
+        block = self.js[self.js.find("gameSaving: {"):self.js.find("loading: {")]
+        self.assertNotIn("return 0; }", block, "the three gameSaving imports must do real work")
+        for call in ("sizeOfSave(state, slot)", "readSave(state, slot, ptr)", "writeSave(state, slot, ptr, length)"):
+            self.assertIn(call, block, f"gameSaving wired to {call}")
+        self.assertIn("return length;", self.js, "the module compares what we return with the length it passed")
+        self.assertIn("ACEDoomSaves.encode", self.js, "slots are compacted before they are stored")
+        self.assertIn("ACEDoomSaves.decode", self.js)
+        self.assertIn("persist.writeStore(SAVES_KEY", self.js, "and reach disk through the engine container")
 
     def test_the_pixel_path_is_blob_urls_never_data_urls(self):
         self.assertIn("URL.createObjectURL(new Blob(", self.js)

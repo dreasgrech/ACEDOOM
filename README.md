@@ -19,6 +19,13 @@ Cohtml UI, with no executable and no game file touched.
   binaryen's wasm2js over the module and ships the result as `doom/doomjs.js`
   (7 MB, committed): the same code as plain JavaScript, JIT-compiled by V8,
   defining one global `ACEDoomModule(imports)` that returns the exports.
+- **Saving works.** doom.wasm has no file system, so it hands saving to its host
+  through three imports: `writeSaveGame` gets the bytes, `sizeOfSaveGame` and
+  `readSaveGame` have to give them back. `doom/doom.js` keeps DOOM's six slots in
+  memory and `doom/saves.js` compacts them into text that goes to `localStorage`
+  (which survives the HUD page reload on Escape/resume) and to the engine's
+  key/value container (which reaches disk), so **a saved game survives closing the
+  game**. See "Saving" below.
 - **The host** is `doom/doom.js`: it loads that script from the mod's own
   folder, instantiates the module, runs `tickGame()` at DOOM's 35 Hz from the
   loader's shared frame loop and feeds it a clock that only advances while the
@@ -64,11 +71,48 @@ The `-` / `+` header buttons scale the panel (1 to 4, default 2 = 640 x 400
 pixels), `x` hides it; the header drags it. Position, open state and scale are
 remembered like the other mods. The footer shows tics/s and frames shown/s.
 
+## Saving
+
+DOOM's Save Game / Load Game menus work, and a save survives quitting the game.
+
+Upstream leaves saving to the host, which is the only reason this is possible: there is
+no file system in a UI page. The three `gameSaving` imports are the whole contract.
+
+Two quirks of the module are worth knowing, because both look like bugs:
+
+- it asks for a 30000-byte buffer and reports its whole **capacity** as the length, not
+  the part it filled (a measured E1M1 save uses 25349 of those bytes);
+- it compares what the host returns against that same length and treats a mismatch as a
+  write error, so `writeSaveGame` returns what it was handed, not what we chose to keep.
+
+The load menu also re-reads every slot in full each time it opens, because the 24-byte
+description it lists lives at the front of the save.
+
+**Why the bytes are compacted.** The engine's container re-serialises every key whenever
+anything saves, and `ui_storage.uistorage` is only about 17 kB before we add to it. Six
+slots of raw base64 would be a quarter of a megabyte. `doom/saves.js` is therefore LZSS
+then base64, hand-rolled because this engine has neither `btoa` nor `CompressionStream`:
+
+| | |
+|---|---|
+| 30000 zero bytes | 468 characters |
+| a real E1M1 save (30000 bytes, 25349 used) | **7120 characters** |
+| incompressible data (worst case) | 1.5x the input |
+
+So six full slots come to roughly 43 kB. A slot over 20000 characters, or a total over
+96000, is kept in memory but never stored, rather than being allowed to bloat the file.
+
+`dev/saveprobe.html` is the rig that measured this: it boots the real module in a headless
+browser, drives DOOM's own menus (New Game, episode, skill, then Save Game, slot, name) and
+reports the resulting blob. Note that `reportKeyDown` sets a **pressed-key cache** that the
+module diffs once a tic, so a key pressed and released within one turn is never seen - the
+probe holds each key across several frames.
+
 ## Layout
 
 - `doom/` - the shipped mod, exactly what lands in
   `Saved Games\ACE\mods\uiresources\ACEUIModLoaderMods\doom\`: `mod.json`
-  (version, styles, scripts, files), `png.js`, `doom.js`, `doom.css`,
+  (version, styles, scripts, files), `png.js`, `saves.js`, `doom.js`, `doom.css`,
   `doomjs.js` (generated, 7 MB).
 - `third_party/doom.wasm` - the module as released upstream (4.4 MB), the input
   of `tools/build_module.py`. Not shipped: the game cannot run it.
@@ -83,6 +127,8 @@ remembered like the other mods. The footer shows tics/s and frames shown/s.
   pixel for pixel with the module's buffer, keys, pause, scale, detach.
 - `dev/preview.html` - the mod outside the game (Edge or Chrome, open the file,
   press Insert; the module is a script, so no server is needed).
+- `dev/saveprobe.html` - drives the real module through DOOM's menus to produce an
+  actual saved game and report its compacted size (see "Saving").
 
 ## Install
 

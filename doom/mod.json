@@ -1,11 +1,12 @@
 {
-  "version": "0.4.0",
+  "version": "0.5.0",
   "title": "DOOM",
   "styles": [
     "doom.css"
   ],
   "scripts": [
     "png.js",
+    "saves.js",
     "audiomap.js",
     "doom.js"
   ],

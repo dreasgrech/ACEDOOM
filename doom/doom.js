@@ -20,6 +20,9 @@
  *     stacked: the hidden one (opacity 0, still rendered) receives the frame and
  *     is revealed only `swapDelay` frames after its `load`. That is the only
  *     pixel path this Cohtml has (no ImageData writes, data: URLs capped at 2048);
+ *   - keeps DOOM's six save slots, which the module also leaves to its host: they
+ *     live in memory, and a compacted copy (saves.js) goes to localStorage and to the
+ *     engine's key/value container, so a saved game survives closing the game;
  *   - maps keyboard events to DOOM keys while the panel is open, and the mouse
  *     on the screen to fire (left) and use (right). `Insert` shows/hides the
  *     panel, `Delete` stands in for DOOM's Escape because the real Escape
@@ -103,6 +106,37 @@ const ACEDoom = (function () {
     const TOGGLE_KEY = "Insert";
     const MENU_KEY = "Delete";
 
+    /** DOOM's six save slots; one key names both stores the slots go to. */
+    const SAVE_SLOTS = 6;
+    const SAVES_KEY = me.key("saves");
+    /** Bumped only if the stored shape changes; anything else is ignored on read. */
+    const SAVES_FORMAT = 1;
+    /**
+     * How much stored text the slots may come to. The engine re-serialises every key of
+     * its container whenever anything saves and the whole file is around 17 kB before we
+     * add to it, so this is a real budget, not a formality.
+     *
+     * A measured E1M1 save is 30000 raw bytes (25349 of them used) that compact to about
+     * 7100 characters, so six full slots come to roughly 43000. The caps sit above that
+     * with room for a big level, and a slot over the per-slot cap is kept in memory but
+     * never stored, rather than being allowed to bloat the file.
+     */
+    const SAVE_CHARS_PER_SLOT = 20000;
+    const SAVE_CHARS_TOTAL = 96000;
+
+    /** The attached state, for the settings pane, which is declared before there is one. */
+    let attached = null;
+
+    const savesSummary = function () {
+        if (!attached) { return "not running"; }
+
+        const used = Object.keys(attached.saves).length;
+
+        if (!used) { return "no saved games yet"; }
+
+        return used + (used === 1 ? " slot used, " : " slots used, ") + attached.savedChars + " characters stored";
+    };
+
     /**
      * Settings, drawn by the loader in the app drawer's options pane. The show/hide key
      * is here because a hardcoded hotkey collides with whatever the player has bound in
@@ -126,6 +160,19 @@ const ACEDoom = (function () {
                 max: SCALE_MAX,
                 step: SCALE_STEP,
                 digits: 1
+            },
+            {
+                key: "saves",
+                type: "info",
+                label: "Saved games",
+                text: savesSummary
+            },
+            {
+                key: "clearSaves",
+                type: "action",
+                label: "All six slots",
+                button: "Clear",
+                press: function () { clearSaves(); }
             }
         ])
         : { toggleKey: TOGGLE_KEY, scale: scaleWas() };
@@ -252,6 +299,10 @@ const ACEDoom = (function () {
             requestsThisFrame: 0,
             music: null,                // { gui, lengthMs, looping, startedAt } while DOOM plays a mapped track
             scale: SCALE_DEFAULT,
+            saves: {},                  // slot -> Uint8Array, DOOM's save slots
+            savesDirty: false,          // a slot changed; the frame loop stores them
+            savesLoaded: false,         // the stores have been read (or had nothing)
+            savedChars: 0,              // size of the last stored copy, for the settings pane
             base: SCRIPT_BASE,
             encoder: null,              // ACEDoomPng encoder, sized by onGameInit
             doom: {
@@ -385,10 +436,166 @@ const ACEDoom = (function () {
         state.music = null;
     };
 
+    // ---- saved games -----------------------------------------------------------------
+
+    /**
+     * DOOM's save slots. doom.wasm has no file system: it hands saving to the host, so
+     * `writeSaveGame` gets the bytes and `sizeOfSaveGame` / `readSaveGame` have to give
+     * them back -- including after the game has been closed and reopened, which is the
+     * point. The slots live in memory, and a compacted copy (saves.js) goes to both of
+     * the stores a mod has: localStorage, which survives the HUD page reload that
+     * Escape/resume causes, and the engine's key/value container, which reaches disk.
+     *
+     * Two things about the module's side are worth knowing, because both look like bugs:
+     *
+     *   - it asks for a 30000-byte buffer and reports its whole *capacity* as the length,
+     *     not the part it filled, so most of a slot is unused space. That is what the
+     *     codec is for.
+     *   - it compares what we return against that same length and treats a mismatch as a
+     *     write error, so `writeSaveGame` returns `length` -- what it was handed, not what
+     *     we decided to keep.
+     *
+     * The load menu calls all three for every slot each time it opens (it reads a whole
+     * save to get at the 24-byte description in its header), so these stay cheap.
+     */
+    const sizeOfSave = function (state, slot) {
+        const bytes = state.saves[slot];
+
+        return bytes ? bytes.length : 0;
+    };
+
+    const readSave = function (state, slot, ptr) {
+        const bytes = state.saves[slot];
+
+        if (!bytes || !ptr) { return 0; }
+
+        // a fresh view every time: the module's memory object is replaced when it grows
+        new Uint8Array(state.doom.memory.buffer, ptr, bytes.length).set(bytes);
+
+        return bytes.length;
+    };
+
+    const writeSave = function (state, slot, ptr, length) {
+        if (!ptr || length <= 0) { return 0; }
+
+        const copy = new Uint8Array(length);
+
+        copy.set(new Uint8Array(state.doom.memory.buffer, ptr, length));
+        state.saves[slot] = copy;
+        state.savesDirty = true;
+        log("slot " + slot + " written, " + length + " bytes");
+
+        return length;
+    };
+
+    /** { v, slots: { "<slot>": text } }, and how many characters that came to. */
+    const packSaves = function (state) {
+        const slots = {};
+        let chars = 0;
+
+        Object.keys(state.saves).forEach(function (slot) {
+            const text = ACEDoomSaves.encode(state.saves[slot]);
+
+            if (text.length > SAVE_CHARS_PER_SLOT) {
+                log("slot " + slot + " compacts to " + text.length + " characters, over the "
+                    + SAVE_CHARS_PER_SLOT + " allowed for one slot; it stays in memory only");
+                return;
+            }
+
+            if (chars + text.length > SAVE_CHARS_TOTAL) {
+                log("slot " + slot + " would take the stored saves past " + SAVE_CHARS_TOTAL
+                    + " characters; it stays in memory only");
+                return;
+            }
+
+            slots[slot] = text;
+            chars += text.length;
+        });
+
+        return { data: { v: SAVES_FORMAT, slots: slots }, chars: chars };
+    };
+
+    /** { slots, chars } restored. Anything unreadable is dropped, never thrown. */
+    const unpackSaves = function (state, stored) {
+        const result = { slots: 0, chars: 0 };
+
+        if (!stored || stored.v !== SAVES_FORMAT || !stored.slots) { return result; }
+
+        Object.keys(stored.slots).forEach(function (slot) {
+            const text = stored.slots[slot];
+            const bytes = ACEDoomSaves.decode(text);
+
+            if (!bytes) {
+                log("slot " + slot + " could not be read back and was dropped");
+                return;
+            }
+
+            state.saves[slot] = bytes;
+            result.slots += 1;
+            result.chars += text.length;
+        });
+
+        return result;
+    };
+
+    const flushSaves = function (state) {
+        const packed = packSaves(state);
+
+        state.savesDirty = false;
+        state.savedChars = packed.chars;
+        persist.writeLocal(SAVES_KEY, packed.data);
+
+        const toDisk = persist.writeStore(SAVES_KEY, packed.data);
+
+        log("saved games stored, " + packed.chars + " characters"
+            + (toDisk ? "" : " (this session only: the engine container is not there)"));
+    };
+
+    const clearSaves = function () {
+        if (!attached) { return; }
+
+        attached.saves = {};
+        attached.savedChars = 0;
+        persist.removeLocal(SAVES_KEY);
+        persist.removeStore(SAVES_KEY);
+        log("saved games cleared");
+    };
+
+    /**
+     * localStorage first: it is written at the same moment as the container and so is
+     * never staler, and it is there synchronously. With nothing there this is a fresh
+     * session, and the container -- which arrives a little later -- is worth waiting for.
+     */
+    const loadSaves = function (state) {
+        const local = persist.readLocal(SAVES_KEY);
+
+        if (!local) { return; }
+
+        const found = unpackSaves(state, local);
+
+        state.savesLoaded = true;
+        state.savedChars = found.chars;
+        log("restored " + found.slots + " saved game(s) from this session");
+    };
+
+    /** Called from the frame loop until the engine's container has its contents. */
+    const pollStoredSaves = function (state) {
+        if (state.savesLoaded || !persist.storeLoaded()) { return; }
+
+        state.savesLoaded = true;
+
+        const found = unpackSaves(state, persist.readStore(SAVES_KEY));
+
+        if (!found.slots) { return; }
+
+        state.savedChars = found.chars;
+        log("restored " + found.slots + " saved game(s) from disk");
+    };
+
     /**
      * The module's imports: the ten doom.wasm declares, plus `env.getTempRet0`,
      * which wasm2js adds to legalise the i64 clock (low 32 bits returned, high 32
-     * read back through it). Saving is unsupported; the embedded shareware WAD is used.
+     * read back through it). The embedded shareware WAD is used.
      */
     const imports = function (state) {
         return {
@@ -405,9 +612,9 @@ const ACEDoom = (function () {
                 onErrorMessage: function (ptr, length) { logModuleText(state, "doom error: ", ptr, length); }
             },
             gameSaving: {
-                sizeOfSaveGame: function () { return 0; },
-                readSaveGame: function () { return 0; },
-                writeSaveGame: function () { return 0; }
+                sizeOfSaveGame: function (slot) { return sizeOfSave(state, slot); },
+                readSaveGame: function (slot, ptr) { return readSave(state, slot, ptr); },
+                writeSaveGame: function (slot, ptr, length) { return writeSave(state, slot, ptr, length); }
             },
             loading: {
                 onGameInit: function (width, height) { onGameInit(state, width, height); },
@@ -656,6 +863,11 @@ const ACEDoom = (function () {
 
         state.lastNow = now;
         ACEUIModLoader.panel.update(state.panel, now);
+
+        // both before the early return: a save is often the last thing done before closing
+        if (state.savesDirty) { flushSaves(state); }
+
+        if (!state.savesLoaded) { pollStoredSaves(state); }
 
         if (!state.open || ACEUIModLoader.hudHidden() || doom.phase !== PHASE.running) {
             state.statsAt = now;
@@ -907,6 +1119,8 @@ const ACEDoom = (function () {
 
         setScale(state, typeof storedScale === "number" ? storedScale : SCALE_DEFAULT);
         setOpen(state, Boolean(storedOpen));
+        attached = state;
+        loadSaves(state);
 
         state.panel = ACEUIModLoader.panel.attach(root, { hudId: me.hudId, storageKey: me.storageKey, log: log });
         state.loop = ACEUIModLoader.loop.start(function (now) { tick(state, now); });
@@ -921,6 +1135,10 @@ const ACEDoom = (function () {
         ACEUIModLoader.loop.stop(state.loop);
         ACEUIModLoader.panel.detach(state.panel);
         releaseKeys(state);          // never leave the game unable to read its controls
+
+        if (state.savesDirty) { flushSaves(state); }   // a save made since the last frame
+
+        if (attached === state) { attached = null; }
 
         if (state.handlers) {
             window.removeEventListener("keydown", state.handlers.keyDown, true);
@@ -962,6 +1180,20 @@ const ACEDoom = (function () {
         ERROR_LIMIT: ERROR_LIMIT,
         PHASE: PHASE,
         CLASS: CLASS,
+        SAVE_SLOTS: SAVE_SLOTS,
+        SAVES_KEY: SAVES_KEY,
+        SAVES_FORMAT: SAVES_FORMAT,
+        SAVE_CHARS_PER_SLOT: SAVE_CHARS_PER_SLOT,
+        SAVE_CHARS_TOTAL: SAVE_CHARS_TOTAL,
+        sizeOfSave: sizeOfSave,
+        readSave: readSave,
+        writeSave: writeSave,
+        packSaves: packSaves,
+        unpackSaves: unpackSaves,
+        flushSaves: flushSaves,
+        loadSaves: loadSaves,
+        pollStoredSaves: pollStoredSaves,
+        clearSaves: clearSaves,
         MIN_SOUND_VOLUME: MIN_SOUND_VOLUME,
         MAX_REQUESTS_PER_FRAME: MAX_REQUESTS_PER_FRAME,
         AUDIO_COMMAND: AUDIO_COMMAND,
