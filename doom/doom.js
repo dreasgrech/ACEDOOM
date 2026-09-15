@@ -40,6 +40,7 @@ const ACEDoom = (function () {
 
     const me = ACEUIModLoader.mod("doom");
     const log = me.log;
+    const setClass = ACEUIModLoader.dom.setClass;
     const persist = ACEUIModLoader.persist;
     const el = ACEUIModLoader.el;
     const close = ACEUIModLoader.close;
@@ -177,11 +178,12 @@ const ACEDoom = (function () {
         ])
         : { toggleKey: TOGGLE_KEY, scale: scaleWas() };
     /** Legacy keyCodes: the engine reports those reliably, `key`/`code` less so. */
-    const KEY_CODES = {
-        Insert: 45, Delete: 46, Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18,
-        Space: 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Comma: 188, Period: 190,
-        ShiftLeft: 160, ShiftRight: 161, ControlLeft: 162, ControlRight: 163, AltLeft: 164, AltRight: 165
-    };
+    /**
+     * Key names, the legacy keyCodes the engine reports, and the characters `key` sends
+     * instead of names: all three live in ACEUIModLoader.keys, which DOOM and the dev
+     * console had each grown a partial copy of. This one was missing Escape.
+     */
+    const keyLib = ACEUIModLoader.keys;
     /** Key name -> the module's exported global holding DOOM's code for it. */
     const SPECIAL_KEYS = [
         ["ArrowLeft", "KEY_LEFTARROW"], ["ArrowRight", "KEY_RIGHTARROW"], ["ArrowUp", "KEY_UPARROW"],
@@ -655,7 +657,7 @@ const ACEDoom = (function () {
 
             if (!global || typeof global.value !== "number") { return; }
 
-            keys[KEY_CODES[pair[0]]] = global.value;
+            keys[keyLib.CODES[pair[0]]] = global.value;
             named[pair[0]] = global.value;
         });
         Object.keys(KEY_ALIASES).forEach(function (alias) {
@@ -900,14 +902,6 @@ const ACEDoom = (function () {
 
     // ---- state changes -------------------------------------------------------------
 
-    const setClass = function (node, className, on) {
-        if (on) {
-            node.classList.add(className);
-        } else {
-            node.classList.remove(className);
-        }
-    };
-
     /**
      * DOOM's keys are movement and fire, and the game must not also read them as car
      * controls -- the arrow keys would otherwise shove the driver's seat about while you
@@ -984,16 +978,7 @@ const ACEDoom = (function () {
      * shadow. The default stays Insert; the settings pane in the app drawer moves it.
      */
     const isToggleKey = function (e) {
-        const want = options.toggleKey || TOGGLE_KEY;
-
-        return e.key === want || e.code === want || e.keyCode === KEY_CODES[want];
-    };
-
-    /** Typing into an input (the dev console, chat) must never be taken as DOOM input. */
-    const isEditable = function (node) {
-        const tag = node && node.tagName ? String(node.tagName).toLowerCase() : "";
-
-        return tag === "input" || tag === "textarea" || Boolean(node && node.isContentEditable);
+        return keyLib.is(e, options.toggleKey || TOGGLE_KEY);
     };
 
     /** The DOOM key for a keyboard event, or null when DOOM has no use for it. */
@@ -1025,7 +1010,8 @@ const ACEDoom = (function () {
     };
 
     const onKey = function (state, e, down) {
-        if (isEditable(e.target)) { return; }
+        // typing into an input (the dev console, chat) must never be taken as DOOM input
+        if (keyLib.isTyping(e)) { return; }
 
         if (isToggleKey(e)) {
             if (down && !state.toggleDown) { setOpen(state, !state.open); }
@@ -1094,27 +1080,15 @@ const ACEDoom = (function () {
             ? ACEUIModLoader.settings.get(me.name, "scale")
             : persist.readLocal(SCALE_KEY);
 
-        state.handlers = {
-            keyDown: function (e) { onKey(state, e, true); },
-            keyUp: function (e) { onKey(state, e, false); },
-            click: function (e) { onClick(state, e); },
-            screenDown: function (e) { onScreenMouseDown(state, e); },
-            mouseUp: function () { onMouseUp(state); },
-            loads: state.frames.map(function (frame, index) {
-                return function () { onFrameLoaded(state, index); };
-            }),
-            errors: state.frames.map(function (frame, index) {
-                return function () { onFrameError(state, index); };
-            })
-        };
-        window.addEventListener("keydown", state.handlers.keyDown, true);
-        window.addEventListener("keyup", state.handlers.keyUp, true);
-        window.addEventListener("mouseup", state.handlers.mouseUp);
-        root.addEventListener("click", state.handlers.click);
-        state.screen.addEventListener("mousedown", state.handlers.screenDown);
+        state.bag = ACEUIModLoader.dom.listeners();
+        state.bag.on(window, "keydown", function (e) { onKey(state, e, true); }, true);
+        state.bag.on(window, "keyup", function (e) { onKey(state, e, false); }, true);
+        state.bag.on(window, "mouseup", function () { onMouseUp(state); });
+        state.bag.on(root, "click", function (e) { onClick(state, e); });
+        state.bag.on(state.screen, "mousedown", function (e) { onScreenMouseDown(state, e); });
         state.frames.forEach(function (frame, index) {
-            frame.el.addEventListener("load", state.handlers.loads[index]);
-            frame.el.addEventListener("error", state.handlers.errors[index]);
+            state.bag.on(frame.el, "load", function () { onFrameLoaded(state, index); });
+            state.bag.on(frame.el, "error", function () { onFrameError(state, index); });
         });
 
         setScale(state, typeof storedScale === "number" ? storedScale : SCALE_DEFAULT);
@@ -1140,17 +1114,9 @@ const ACEDoom = (function () {
 
         if (attached === state) { attached = null; }
 
-        if (state.handlers) {
-            window.removeEventListener("keydown", state.handlers.keyDown, true);
-            window.removeEventListener("keyup", state.handlers.keyUp, true);
-            window.removeEventListener("mouseup", state.handlers.mouseUp);
-            state.root.removeEventListener("click", state.handlers.click);
-            state.screen.removeEventListener("mousedown", state.handlers.screenDown);
-            state.frames.forEach(function (frame, index) {
-                frame.el.removeEventListener("load", state.handlers.loads[index]);
-                frame.el.removeEventListener("error", state.handlers.errors[index]);
-            });
-            state.handlers = null;
+        if (state.bag) {
+            state.bag.off();
+            state.bag = null;
         }
 
         state.frames.forEach(function (frame) {
@@ -1168,7 +1134,8 @@ const ACEDoom = (function () {
         TIC_MS: TIC_MS,
         TOGGLE_KEY: TOGGLE_KEY,
         MENU_KEY: MENU_KEY,
-        KEY_CODES: KEY_CODES,
+        /* the library's table, re-exported: DOOM no longer keeps its own */
+        KEY_CODES: keyLib.CODES,
         SCALE_MIN: SCALE_MIN,
         SCALE_MAX: SCALE_MAX,
         SCALE_STEP: SCALE_STEP,
