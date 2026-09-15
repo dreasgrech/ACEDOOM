@@ -876,7 +876,7 @@ const ACEDoom = (function () {
 
         if (now - state.lastTickAt >= TIC_MS) {
             state.lastTickAt = now;
-            runTick(state);
+            ACEUIModLoader.section("doom tic", function () { runTick(state); });
         }
 
         if (state.music && state.music.startedAt >= 0 && state.music.lengthMs > 0
@@ -886,7 +886,9 @@ const ACEDoom = (function () {
 
         watchPending(state, now);
 
-        if (doom.frameDirty && !state.presentingFailed) { present(state, now); }
+        if (doom.frameDirty && !state.presentingFailed) {
+            ACEUIModLoader.section("present frame", function () { present(state, now); });
+        }
 
         if (now - state.statsAt >= STATS_EVERY_MS) {
             reportStats(state, now - state.statsAt);
