@@ -93,6 +93,23 @@ const ACEDoom = (function () {
 
     const TOGGLE_KEY = "Insert";
     const MENU_KEY = "Delete";
+
+    /**
+     * Settings, drawn by the loader in the app drawer's options pane. The show/hide key
+     * is here because a hardcoded hotkey collides with whatever the player has bound in
+     * the game; this lets them move ours rather than lose theirs.
+     */
+    const options = ACEUIModLoader.settings
+        ? ACEUIModLoader.settings.define("doom", [
+            {
+                key: "toggleKey",
+                type: "key",
+                label: "Show/hide key",
+                value: TOGGLE_KEY,
+                hint: "Click, then press the key you want"
+            }
+        ])
+        : { toggleKey: TOGGLE_KEY };
     /** Legacy keyCodes: the engine reports those reliably, `key`/`code` less so. */
     const KEY_CODES = {
         Insert: 45, Delete: 46, Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18,
@@ -725,8 +742,15 @@ const ACEDoom = (function () {
 
     // ---- input -----------------------------------------------------------------------
 
+    /**
+     * The show/hide key is a setting, not a constant: a hardcoded Insert collides with
+     * whatever the player has bound in the game, and their bindings are not ours to
+     * shadow. The default stays Insert; the settings pane in the app drawer moves it.
+     */
     const isToggleKey = function (e) {
-        return e.key === TOGGLE_KEY || e.code === TOGGLE_KEY || e.keyCode === KEY_CODES[TOGGLE_KEY];
+        const want = options.toggleKey || TOGGLE_KEY;
+
+        return e.key === want || e.code === want || e.keyCode === KEY_CODES[want];
     };
 
     /** Typing into an input (the dev console, chat) must never be taken as DOOM input. */
