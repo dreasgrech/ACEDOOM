@@ -379,7 +379,7 @@
                     t("detach stops the loop, releases listeners and object URLs", function () {
                         const cancelled = window.__clock.cancelled;
                         ACEDoom.detach(state);
-                        eq(window.__clock.cancelled, cancelled + 1); eq(state.loop.running, false);
+                        eq(window.__clock.cancelled, cancelled + 1); eq(state.ui.loop.running, false);
                         ok(state.frames.every(function (f) { return f.url === null && f.pending === false; }), "urls released");
                         keyEvent("keydown", 45); eq(state.open, false, "toggle key released");
                     });

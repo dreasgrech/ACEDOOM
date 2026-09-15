@@ -92,14 +92,12 @@ const ACEDoom = (function () {
     const SCALE_MIN = 1;
     const SCALE_MAX = 4;
     const SCALE_STEP = 0.5;
-    const OPEN_KEY = me.key("open");
-    const SCALE_KEY = me.key("scale");
     /**
      * The scale lived under its own key before it was a setting. Seed the setting's
      * default from it so upgrading does not silently reset a screen someone had sized.
      */
     const scaleWas = function () {
-        const was = ACEUIModLoader.persist.readLocal(SCALE_KEY);
+        const was = me.recall("scale", SCALE_DEFAULT);
 
         return typeof was === "number" ? was : SCALE_DEFAULT;
     };
@@ -143,8 +141,7 @@ const ACEDoom = (function () {
      * is here because a hardcoded hotkey collides with whatever the player has bound in
      * the game; this lets them move ours rather than lose theirs.
      */
-    const options = ACEUIModLoader.settings
-        ? ACEUIModLoader.settings.define("doom", [
+    const options = ACEUIModLoader.settings.define(me.name, [
             {
                 key: "toggleKey",
                 type: "key",
@@ -174,9 +171,8 @@ const ACEDoom = (function () {
                 label: "All six slots",
                 button: "Clear",
                 press: function () { clearSaves(); }
-            }
-        ])
-        : { toggleKey: TOGGLE_KEY, scale: scaleWas() };
+        }
+    ]);
     /** Legacy keyCodes: the engine reports those reliably, `key`/`code` less so. */
     /**
      * Key names, the legacy keyCodes the engine reports, and the characters `key` sends
@@ -864,8 +860,6 @@ const ACEDoom = (function () {
         const step = state.lastNow ? Math.min(now - state.lastNow, MAX_CLOCK_STEP_MS) : 0;
 
         state.lastNow = now;
-        ACEUIModLoader.panel.update(state.panel, now);
-
         // both before the early return: a save is often the last thing done before closing
         if (state.savesDirty) { flushSaves(state); }
 
@@ -935,7 +929,7 @@ const ACEDoom = (function () {
     const setOpen = function (state, open) {
         state.open = Boolean(open);
         setClass(state.root, CLASS.closed, !state.open);
-        persist.writeLocal(OPEN_KEY, state.open);
+        me.remember("open", state.open);
         state.lastTickAt = 0;
 
         if (state.open) {
@@ -963,11 +957,7 @@ const ACEDoom = (function () {
         state.scale = value;
         state.root.style.fontSize = value + "rem";
 
-        if (ACEUIModLoader.settings) {
-            ACEUIModLoader.settings.set(me.name, "scale", value);
-        } else {
-            persist.writeLocal(SCALE_KEY, value);
-        }
+        ACEUIModLoader.settings.set(me.name, "scale", value);
     };
 
     // ---- input -----------------------------------------------------------------------
@@ -1075,10 +1065,8 @@ const ACEDoom = (function () {
 
     const attach = function (root) {
         const state = create(root);
-        const storedOpen = persist.readLocal(OPEN_KEY);
-        const storedScale = ACEUIModLoader.settings
-            ? ACEUIModLoader.settings.get(me.name, "scale")
-            : persist.readLocal(SCALE_KEY);
+        const storedOpen = me.recall("open", false);
+        const storedScale = ACEUIModLoader.settings.get(me.name, "scale");
 
         state.bag = ACEUIModLoader.dom.listeners();
         state.bag.on(window, "keydown", function (e) { onKey(state, e, true); }, true);
@@ -1096,8 +1084,7 @@ const ACEDoom = (function () {
         attached = state;
         loadSaves(state);
 
-        state.panel = ACEUIModLoader.panel.attach(root, { hudId: me.hudId, storageKey: me.storageKey, log: log });
-        state.loop = ACEUIModLoader.loop.start(function (now) { tick(state, now); });
+        state.ui = me.panel(root, function (now) { tick(state, now); });
         log("attached, " + (state.open ? "open" : "closed") + ", scale " + state.scale + ", toggle key " + TOGGLE_KEY
             + ", module " + state.base + MODULE_FILE);
 
@@ -1106,8 +1093,7 @@ const ACEDoom = (function () {
 
     /** Stop the loop, release listeners and object URLs. The DOM is left in place. */
     const detach = function (state) {
-        ACEUIModLoader.loop.stop(state.loop);
-        ACEUIModLoader.panel.detach(state.panel);
+        state.ui.stop();
         releaseKeys(state);          // never leave the game unable to read its controls
 
         if (state.savesDirty) { flushSaves(state); }   // a save made since the last frame
@@ -1127,8 +1113,6 @@ const ACEDoom = (function () {
             frame.readyAt = -1;
         });
     };
-
-    log("script loaded, version=" + me.version + ", lib=" + ACEUIModLoader.VERSION + ", url=" + location.href);
 
     return {
         TIC_MS: TIC_MS,
