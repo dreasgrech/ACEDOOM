@@ -90,6 +90,15 @@ const ACEDoom = (function () {
     const SCALE_STEP = 0.5;
     const OPEN_KEY = me.key("open");
     const SCALE_KEY = me.key("scale");
+    /**
+     * The scale lived under its own key before it was a setting. Seed the setting's
+     * default from it so upgrading does not silently reset a screen someone had sized.
+     */
+    const scaleWas = function () {
+        const was = ACEUIModLoader.persist.readLocal(SCALE_KEY);
+
+        return typeof was === "number" ? was : SCALE_DEFAULT;
+    };
 
     const TOGGLE_KEY = "Insert";
     const MENU_KEY = "Delete";
@@ -107,9 +116,19 @@ const ACEDoom = (function () {
                 label: "Show/hide key",
                 value: TOGGLE_KEY,
                 hint: "Click, then press the key you want"
+            },
+            {
+                key: "scale",
+                type: "range",
+                label: "Screen scale",
+                value: scaleWas(),
+                min: SCALE_MIN,
+                max: SCALE_MAX,
+                step: SCALE_STEP,
+                digits: 1
             }
         ])
-        : { toggleKey: TOGGLE_KEY };
+        : { toggleKey: TOGGLE_KEY, scale: scaleWas() };
     /** Legacy keyCodes: the engine reports those reliably, `key`/`code` less so. */
     const KEY_CODES = {
         Insert: 45, Delete: 46, Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18,
@@ -737,7 +756,12 @@ const ACEDoom = (function () {
 
         state.scale = value;
         state.root.style.fontSize = value + "rem";
-        persist.writeLocal(SCALE_KEY, value);
+
+        if (ACEUIModLoader.settings) {
+            ACEUIModLoader.settings.set(me.name, "scale", value);
+        } else {
+            persist.writeLocal(SCALE_KEY, value);
+        }
     };
 
     // ---- input -----------------------------------------------------------------------
@@ -854,7 +878,9 @@ const ACEDoom = (function () {
     const attach = function (root) {
         const state = create(root);
         const storedOpen = persist.readLocal(OPEN_KEY);
-        const storedScale = persist.readLocal(SCALE_KEY);
+        const storedScale = ACEUIModLoader.settings
+            ? ACEUIModLoader.settings.get(me.name, "scale")
+            : persist.readLocal(SCALE_KEY);
 
         state.handlers = {
             keyDown: function (e) { onKey(state, e, true); },

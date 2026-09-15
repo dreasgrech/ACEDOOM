@@ -292,7 +292,7 @@
 
                     t("scale buttons step by 0.5 within 1..4 and persist", function () {
                         root.querySelector("[data-action=larger]").click(); eq(state.scale, 2.5); eq(root.style.fontSize, "2.5rem");
-                        eq(localStorage.getItem("acedoom.scale"), "2.5");
+                        eq(ACEUIModLoader.settings.get("doom", "scale"), 2.5, "persisted through the settings store");
                         ACEDoom.setScale(state, 10); eq(state.scale, 4, "clamped high"); ACEDoom.setScale(state, 0); eq(state.scale, 1, "clamped low");
                         root.querySelector("[data-action=close]").click(); eq(state.open, false, "x closes");
                     });
