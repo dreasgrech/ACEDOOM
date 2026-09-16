@@ -173,7 +173,6 @@ const ACEDoom = (function () {
                 press: function () { clearSaves(); }
         }
     ]);
-    /** Legacy keyCodes: the engine reports those reliably, `key`/`code` less so. */
     /**
      * Key names, the legacy keyCodes the engine reports, and the characters `key` sends
      * instead of names: all three live in ACEUIModLoader.keys, which DOOM and the dev
@@ -208,7 +207,11 @@ const ACEDoom = (function () {
     const ACTION_CLOSE = "close";
 
     const TITLE_TEXT = "ACE DOOM";
-    const HINT_TEXT = TOGGLE_KEY + " show/hide · " + MENU_KEY + " menu · arrows move · Ctrl or click fire · Space or right-click use · Shift run";
+    /** The controls line. The show/hide key is a setting, so the hint has to follow it. */
+    const hintText = function () {
+        return (options.toggleKey || TOGGLE_KEY) + " show/hide · " + MENU_KEY
+            + " menu · arrows move · Ctrl or click fire · Space or right-click use · Shift run";
+    };
 
     /** Class names shared with doom.css. */
     const CLASS = {
@@ -261,7 +264,7 @@ const ACEDoom = (function () {
             + el("div", CLASS.screen, screenAttrs) + el("img", CLASS.frame + " " + CLASS.shown) + el("img", CLASS.frame) + close("div")
             + el("div", CLASS.footer)
             + el("span", CLASS.status) + "press " + TOGGLE_KEY + close("span")
-            + el("span", CLASS.hint) + HINT_TEXT + close("span")
+            + el("span", CLASS.hint) + hintText() + close("span")
             + close("div");
     };
 
@@ -279,6 +282,7 @@ const ACEDoom = (function () {
             root: root,
             screen: root.querySelector("." + CLASS.screen),
             status: root.querySelector("." + CLASS.status),
+            hint: root.querySelector("." + CLASS.hint),
             frames: toArray(root.querySelectorAll("." + CLASS.frame)).map(function (img) {
                 return { el: img, url: null, pending: false, since: 0, readyAt: -1 };
             }),
@@ -297,6 +301,7 @@ const ACEDoom = (function () {
             requestsThisFrame: 0,
             music: null,                // { gui, lengthMs, looping, startedAt } while DOOM plays a mapped track
             scale: SCALE_DEFAULT,
+            scaler: null,               // me.scale handle: the loader owns panel scaling
             saves: {},                  // slot -> Uint8Array, DOOM's save slots
             savesDirty: false,          // a slot changed; the frame loop stores them
             savesLoaded: false,         // the stores have been read (or had nothing)
@@ -321,9 +326,9 @@ const ACEDoom = (function () {
             lastTickAt: 0,
             statsAt: 0,
             lastStatus: "",
-            panel: null,                // ACEUIModLoader.panel state (drag + position)
-            loop: null,                 // ACEUIModLoader.loop handle
-            handlers: null
+            bag: null,                  // every listener this panel added, for detach
+            unsubscribeSettings: null,
+            ui: null                    // me.panel handle: the panel and its frame loop
         };
     };
 
@@ -953,13 +958,16 @@ const ACEDoom = (function () {
         return settings;
     };
 
+    /**
+     * Screen scale, through `me.scale`: one font-size in rem on the root, everything
+     * inside in em. DOOM had its own copy of this, which wrote the style and stored the
+     * value but never *listened* -- so moving the slider in the settings window changed
+     * the stored number and nothing on the screen until the mod was restarted. The
+     * library's version follows the setting both ways, and is the same one the console,
+     * the profiler and the probe use.
+     */
     const setScale = function (state, scale) {
-        const value = ACEUIModLoader.clamp(Math.round(scale / SCALE_STEP) * SCALE_STEP, SCALE_MIN, SCALE_MAX);
-
-        state.scale = value;
-        state.root.style.fontSize = value + "rem";
-
-        ACEUIModLoader.settings.set(me.name, "scale", value);
+        return state.scaler ? state.scaler.set(scale) : state.scale;
     };
 
     // ---- input -----------------------------------------------------------------------
@@ -1056,9 +1064,9 @@ const ACEDoom = (function () {
         const action = ACEUIModLoader.closestWithAttribute(e.target, ACTION_ATTR, state.root);
         const name = action ? action.getAttribute(ACTION_ATTR) : "";
 
-        if (name === ACTION_SMALLER) { setScale(state, state.scale - SCALE_STEP); }
+        if (name === ACTION_SMALLER) { state.scaler.nudge(-1); }
 
-        if (name === ACTION_LARGER) { setScale(state, state.scale + SCALE_STEP); }
+        if (name === ACTION_LARGER) { state.scaler.nudge(1); }
 
         if (name === ACTION_CLOSE) { setOpen(state, false); }
     };
@@ -1081,13 +1089,24 @@ const ACEDoom = (function () {
             state.bag.on(frame.el, "error", function () { onFrameError(state, index); });
         });
 
-        setScale(state, typeof storedScale === "number" ? storedScale : SCALE_DEFAULT);
+        // the hint advertises the show/hide key, so it follows the setting as well
+        state.unsubscribeSettings = ACEUIModLoader.settings.onChange(me.name, function (key) {
+            if (key === "toggleKey" && state.hint) { state.hint.textContent = hintText(); }
+        });
+        state.scaler = me.scale(root, {
+            min: SCALE_MIN,
+            max: SCALE_MAX,
+            step: SCALE_STEP,
+            value: typeof storedScale === "number" ? storedScale : SCALE_DEFAULT,
+            onScale: function (value) { state.scale = value; }
+        });
         setOpen(state, Boolean(storedOpen));
         attached = state;
         loadSaves(state);
 
         state.ui = me.panel(root, function (now) { tick(state, now); });
-        log("attached, " + (state.open ? "open" : "closed") + ", scale " + state.scale + ", toggle key " + TOGGLE_KEY
+        log("attached, " + (state.open ? "open" : "closed") + ", scale " + state.scale
+            + ", toggle key " + (options.toggleKey || TOGGLE_KEY)
             + ", module " + state.base + MODULE_FILE);
 
         return state;
@@ -1097,6 +1116,16 @@ const ACEDoom = (function () {
     const detach = function (state) {
         state.ui.stop();
         releaseKeys(state);          // never leave the game unable to read its controls
+
+        if (state.scaler) {
+            state.scaler.stop();
+            state.scaler = null;
+        }
+
+        if (state.unsubscribeSettings) {
+            state.unsubscribeSettings();
+            state.unsubscribeSettings = null;
+        }
 
         if (state.savesDirty) { flushSaves(state); }   // a save made since the last frame
 
