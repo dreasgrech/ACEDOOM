@@ -30,6 +30,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import build_table  # noqa: E402
 import patch_bank  # noqa: E402
 
 SOUNDS = os.path.join(ROOT, "audio", "sounds.json")
@@ -42,14 +43,19 @@ MUSIC_DIR = os.path.join(os.path.dirname(ROOT), "console-doom", "music")
 PACKAGE_DIR = os.path.join(ROOT, "build", "package")
 PATCHED_BANK = os.path.join(PACKAGE_DIR, "content", "sfx", "gui.bank")
 PACKAGE_NAME = "ACEUIModLoaderMods-doom.kspkg"
-BANK_PATH = "content/sfx/gui.bank"          # the one file this package overrides
-# Table records for that override. Measured against 60 package sets (the loader alongside,
-# plus 0-5 synthetic car mods): 1 record 40%, 16 68%, 32 93%, 64 73%, 96 78%, 128 77%, with
-# 32 scoring 90% on a held-out population. The good counts depend on the package's whole
-# hash set, so this is DOOM's number and not the loader's -- re-measure if the package
-# gains a file. ~90% is the ceiling here because a bank swap has only this one way in,
-# where the loader has two and reaches 100%.
-DEFAULT_DUPS = 32
+BANK_PATH = "content/sfx/gui.bank"          # the samples DOOM's sounds are swapped into
+TABLE_PATH = "system/gui_events.table"      # the map that reaches gui_navigation params 5-8
+BANK_IN_TABLE = "content\\sfx\\gui.bank"      # how the table spells it
+# Table records for those overrides. Measured 2026-09-17 against 48 package sets (the loader
+# alongside, plus 0-5 synthetic car mods), scoring a set as won only when BOTH overrides win --
+# the bank without the table plays DOOM's samples on types nothing fires, and the table without
+# the bank fires types whose samples are still Kunos'. 1 record 19%, 16 88%, 32 90%, 64 98%,
+# 96 98%, 128 100%, and 128 scored 24/24 on a held-out population nothing was selected on.
+# Two overrides that must both land need more records than the one this package used to have.
+# The good counts depend on the package's whole hash set: re-measure if it gains a file, with
+#   tune_dups.tune(package_dir, [BANK_PATH, TABLE_PATH], ..., require="all",
+#                  package_name=PACKAGE_NAME)
+DEFAULT_DUPS = 128
 LOADER_TOOLS = os.path.join(os.environ.get("ACE_LOADER_DIR") or os.path.join(os.path.dirname(ROOT), "ACEUIModLoader"), "tools")
 
 # S_sfx order in doomgeneric/src/sounds.c (index = the number I_StartSound reports)
@@ -141,6 +147,13 @@ def our_bank():
 
 def write_patched_bank(config):
     mapping = {s["stockSample"]: (s["sfx"] if s.get("sfx") else "stock:" + s["copyStock"]) for s in config["slots"] if s.get("stockSample")}
+    # alsoSamples: the same DOOM sound put into every sample a param might turn out to play.
+    # Which stock sample a gui_navigation param plays can only be learned by ear, and a wrong
+    # guess is a launch. Filling all the candidates makes the slot right whichever it is, at
+    # the price of those stock sounds being DOOM's if the game ever plays them itself.
+    for slot in config["slots"]:
+        for extra in slot.get("alsoSamples", []):
+            mapping[extra] = slot["sfx"]
     # musicSwaps replace a whole music track in gui.bank with one of our bank's music samples (raw name)
     for m in config.get("musicSwaps", []):
         mapping[m["stockSample"]] = m["bankSample"]
@@ -157,6 +170,26 @@ def write_patched_bank(config):
 
 
 KNOWN_FLAGS = {"--pack", "--install", "--no-bank"}
+
+
+def write_table(config):
+    """
+    The gui_events.table override that claims the types the effects now use.
+
+    The effects play on gui_navigation params 5-8, which the stock table maps no type to.
+    Claiming four types the stock table leaves unmapped reaches them without altering a
+    single line the game already uses, so nothing the game plays for itself changes.
+    """
+    claims = config.get("claims", [])
+    if not claims:
+        return None, []
+    mapping = {c["gui"]: {"event": c["event"], "bank": BANK_IN_TABLE, "param": c["param"]} for c in claims}
+    table = build_table.build(build_table.stock_table(), mapping)
+    dest = os.path.join(PACKAGE_DIR, *TABLE_PATH.split("/"))
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "wb") as f:
+        f.write(table)
+    return dest, [f'  {c["gui"]} -> {c["event"]} param {c["param"]}  ({c.get("_plays", "?")})' for c in claims]
 
 
 def main(argv):
@@ -181,6 +214,11 @@ def main(argv):
         source, size, report = write_patched_bank(config)
         print(f"wrote {PATCHED_BANK} ({size:,} bytes) from {source}, {len(report)} sample(s) replaced:")
         print("\n".join(report))
+    table_file, claim_report = write_table(config)
+    if table_file:
+        print(f"wrote {table_file}, claiming {len(claim_report)} unmapped type(s):")
+        print("\n".join(claim_report))
+
     if "--pack" in argv or "--install" in argv:
         if not os.path.isfile(PATCHED_BANK):
             raise SystemExit("nothing to pack: build the bank first")
@@ -191,10 +229,24 @@ def main(argv):
         # hash give it several places in that equal run. See pack_kspkg.py --dups.
         cmd = [sys.executable, os.path.join(LOADER_TOOLS, "pack_kspkg.py"), PACKAGE_DIR, out]
         if int(asked) > 1:
+            # Both overrides have to win, not either: the bank without the table plays DOOM's
+            # sounds on types nothing fires, and the table without the bank fires types whose
+            # samples are still Kunos'. That is why DEFAULT_DUPS is measured with require=all.
             cmd += [f"--dups={asked}", f"--dup={BANK_PATH}"]
+            if table_file:
+                cmd.append(f"--dup={TABLE_PATH}")
         if "--install" in argv:
             cmd.append("--install")
         subprocess.run(cmd, check=True)
+        if "--install" in argv:
+            # audiomap.js and gui.bank are two halves of the same sounds.json, and they ship
+            # by different routes: the bank is packed, the map is a loose mod file. Installing
+            # one without the other is silent and looks like a sound bug -- with a stale map
+            # the host asks for the types it used to use, whose samples are stock again, so
+            # DOOM's pistol comes out as Kunos' spray gun. It cost a launch on 2026-09-17.
+            print("\nNOTE: the package is installed, but doom/audiomap.js is a LOOSE file and"
+                  "\n      this did not install it. The map and the bank must match:"
+                  "\n      python <ACEUIModLoader>/tools/install_mod.py " + os.path.join(ROOT, "doom"))
 
 
 if __name__ == "__main__":

@@ -2,37 +2,53 @@
   "_comment": [
     "DOOM's sounds go through the game's own UI bank: the game creates its UI sound events once at startup",
     "from five fixed banks and never loads a mod's bank, so tools/patch_bank.py swaps samples INSIDE",
-    "content/sfx/gui.bank (the livery-editor sounds, never the menu clicks or the music) for DOOM's, and the",
-    "host asks the game for the stock GUI event type that plays the swapped sample.",
-    "Each slot: 'sfx' the DS lump (audio/sfx/<sfx>.wav) placed in 'stockSample'; 'gui' the AudioGuiEventType",
-    "that plays that sample; 'also' other DOOM sounds the host routes to the same type (they play the slot's",
-    "sample). Which GUI type plays which sample was mapped in game (snippets/guisounddisc.js, 2026-09-14):",
-    "PAINT_APPLY=paint-spray-gun, PAINT_REMOVE=spray-paint-07, STICKER_APPLY=canspraypaint,",
-    "STICKER_REMOVE=paper-wrap, PART_APPLY=pneumatic-wrench, PART_REMOVE=nothing, WHEEL_APPLY=ext_gun_install,",
-    "WHEEL_REMOVE=ext_gun_remove."
+    "content/sfx/gui.bank for DOOM's, and the host asks for the GUI event type that plays them.",
+    "",
+    "The effects live on gui_navigation and the music on gui_garage, and that separation is the point.",
+    "One FMOD event holds a small pool of instances and steals the oldest when it fills; the music is a",
+    "103 s instance, so it is permanently the oldest thing in its pool. While the effects shared the",
+    "garage event with it, DOOM's gunfire evicted the music within a frame or two -- audible effects,",
+    "silent music, which is exactly what the game did (proven by snippets/musicburst.js, 2026-09-17).",
+    "",
+    "gui_navigation has NINE parameters; the stock gui_events.table maps only 0-4. Params 5-8 are reached",
+    "by claiming four types the stock table leaves unmapped, which is what `claims` below does through",
+    "tools/build_table.py. Nothing the game plays for itself changes: params 0-4 keep their menu clicks",
+    "and the garage slots go back to stock, apart from the pneumatic one that carries E1M1."
   ],
   "slots": [
     {
-      "gui": "GUI_PAINT_APPLY",
-      "stockSample": "049509623-paint-spray-gun-short-1",
+      "gui": "GUI_MONEY_GAIN",
+      "stockSample": "switch1",
       "sfx": "pistol",
       "also": [
-        "chgun"
-      ],
-      "_role": "weapons fire"
-    },
-    {
-      "gui": "GUI_PAINT_REMOVE",
-      "stockSample": "006146515-spray-paint-spray-07",
-      "sfx": "shotgn",
-      "also": [
+        "chgun",
+        "shotgn",
         "dshtgn"
       ],
-      "_role": "shotgun"
+      "_role": "weapons fire; the shotgun shares this now that there are four slots, not six"
     },
     {
-      "gui": "GUI_STICKER_APPLY",
-      "stockSample": "008726260-canspraypaint",
+      "gui": "GUI_MONEY_LOSS",
+      "stockSample": "switch2",
+      "sfx": "podth1",
+      "also": [
+        "podth2",
+        "podth3",
+        "bgdth1",
+        "bgdth2",
+        "sgtdth",
+        "pldeth",
+        "pdiehi",
+        "plpain",
+        "oof",
+        "popain",
+        "dmpain"
+      ],
+      "_role": "deaths and pain grunts, merged for the same reason"
+    },
+    {
+      "gui": "GUI_SWITCH_OFF",
+      "stockSample": "199746459-money-prize",
       "sfx": "doropn",
       "also": [
         "dorcls",
@@ -44,42 +60,23 @@
         "pstart",
         "pstop"
       ],
-      "_role": "doors, switches, lifts"
+      "_role": "doors, switches, lifts; param 6's stock sample was money-prize by guess and proved wrong, so every 1.3-1.6 s candidate carries this sound",
+      "alsoSamples": [
+        "281953171-uimvmt_ui-card-menu-shop-item-",
+        "load"
+      ]
     },
     {
-      "gui": "GUI_STICKER_REMOVE",
-      "stockSample": "051488767-paper-wrap-open",
-      "sfx": "plpain",
-      "also": [
-        "oof",
-        "popain",
-        "dmpain"
-      ],
-      "_role": "pain grunts (this slot swallows very short samples, so a 0.3 s grunt not the pickup blip)"
-    },
-    {
-      "gui": "GUI_WHEEL_APPLY",
-      "stockSample": "ext_gun_install_3",
-      "sfx": "podth1",
-      "also": [
-        "podth2",
-        "podth3",
-        "bgdth1",
-        "bgdth2",
-        "sgtdth",
-        "pldeth",
-        "pdiehi"
-      ],
-      "_role": "deaths"
-    },
-    {
-      "gui": "GUI_WHEEL_REMOVE",
-      "stockSample": "ext_gun_remove_1",
+      "gui": "GUI_SWITCH_ON",
+      "stockSample": "039716271-money-bonus-whoosh",
       "sfx": "barexp",
       "also": [
         "rxplod"
       ],
-      "_role": "explosions (barrels and rockets only; imp fireball impacts stay silent, they misled as explosions)"
+      "_role": "explosions (barrels and rockets only; imp fireball impacts stay silent, they misled as explosions); the long-sample candidate carries it too, in case param 5 is the fanfare rather than the whoosh",
+      "alsoSamples": [
+        "125068160-level-e"
+      ]
     }
   ],
   "music": [
@@ -137,5 +134,31 @@
     }
   ],
   "_musicExperiment": "EXPERIMENT: every UI music track is DOOM E1M1, so any menu/gameplay music is unmistakable and GUI_MUSIC_MENU/GAMEPLAY/END are deterministic. If it works, the real version uses different DOOM tracks (E1M1-E1M9) for variety.",
-  "_note": "6 gameplay effects + music. Pickup dropped: its GUI_PART_APPLY slot now carries E1M1, the only garage slot free after the other six. Menu side effect: livery-editor 'part apply' plays E1M1."
+  "_note": "4 effect groups + music. Four slots because gui_navigation exposes params 5-8 and no more; the shotgun shares the weapons slot and pain shares deaths. The pickup blip is still dropped. GUI_WARNING (param 1) is a fifth slot we could borrow to unmerge one pair, at the price of one stock menu sound -- its stock sample has never been identified.",
+  "claims": [
+    {
+      "gui": "GUI_SWITCH_ON",
+      "event": "gui/gui_navigation",
+      "param": 5,
+      "_plays": "039716271-money-bonus-whoosh, 4.40 s"
+    },
+    {
+      "gui": "GUI_SWITCH_OFF",
+      "event": "gui/gui_navigation",
+      "param": 6,
+      "_plays": "199746459-money-prize, 1.49 s"
+    },
+    {
+      "gui": "GUI_MONEY_GAIN",
+      "event": "gui/gui_navigation",
+      "param": 7,
+      "_plays": "switch1, 0.29 s"
+    },
+    {
+      "gui": "GUI_MONEY_LOSS",
+      "event": "gui/gui_navigation",
+      "param": 8,
+      "_plays": "switch2, 0.27 s"
+    }
+  ]
 }
