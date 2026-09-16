@@ -13,10 +13,13 @@ build_audio.py - everything the audio path derives from audio/sounds.json.
                                      the loader's pack_kspkg.py (named to list after the loader).
 
 Usage:
-    python tools/build_audio.py [--pack] [--install] [--no-bank]
+    python tools/build_audio.py [--pack] [--install] [--no-bank] [--dups=N]
 
 --no-bank skips step 3 (before Studio has built our bank). Steps 1 and 2 never need
 the bank.
+--dups=N  how many table records the gui.bank override carries (default below). One
+          record wins the game's lookup only about half the time once anything else is
+          installed; see pack_kspkg.py --dups.
 """
 import glob
 import json
@@ -153,7 +156,19 @@ def write_patched_bank(config):
     return path, len(out), report
 
 
+KNOWN_FLAGS = {"--pack", "--install", "--no-bank"}
+
+
 def main(argv):
+    # A typo must not look like success: an unrecognised --instal would build the bank and
+    # quietly not install it, which reads exactly like a build that worked.
+    unknown = sorted(a for a in argv if a.startswith("--")
+                     and a not in KNOWN_FLAGS and not a.startswith("--dups="))
+    if unknown:
+        raise SystemExit(__doc__ + "\nunknown option(s): " + ", ".join(unknown))
+    asked = next((a.split("=", 1)[1] for a in argv if a.startswith("--dups=")), str(DEFAULT_DUPS))
+    if not asked.isdigit():
+        raise SystemExit(f"--dups takes a whole number, not {asked!r}")
     config = load()
     for s in config["slots"]:
         if s.get("sfx") and s["sfx"] not in SFX_NAMES:
@@ -174,10 +189,9 @@ def main(argv):
         # lookup only about half the time once anything else is installed (the base package
         # is added first, so its record starts ahead of ours). Extra records for the same
         # hash give it several places in that equal run. See pack_kspkg.py --dups.
-        dups = next((a.split("=", 1)[1] for a in argv if a.startswith("--dups=")), str(DEFAULT_DUPS))
         cmd = [sys.executable, os.path.join(LOADER_TOOLS, "pack_kspkg.py"), PACKAGE_DIR, out]
-        if int(dups) > 1:
-            cmd += [f"--dups={dups}", f"--dup={BANK_PATH}"]
+        if int(asked) > 1:
+            cmd += [f"--dups={asked}", f"--dup={BANK_PATH}"]
         if "--install" in argv:
             cmd.append("--install")
         subprocess.run(cmd, check=True)
