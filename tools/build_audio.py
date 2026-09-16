@@ -39,6 +39,14 @@ MUSIC_DIR = os.path.join(os.path.dirname(ROOT), "console-doom", "music")
 PACKAGE_DIR = os.path.join(ROOT, "build", "package")
 PATCHED_BANK = os.path.join(PACKAGE_DIR, "content", "sfx", "gui.bank")
 PACKAGE_NAME = "ACEUIModLoaderMods-doom.kspkg"
+BANK_PATH = "content/sfx/gui.bank"          # the one file this package overrides
+# Table records for that override. Measured against 60 package sets (the loader alongside,
+# plus 0-5 synthetic car mods): 1 record 40%, 16 68%, 32 93%, 64 73%, 96 78%, 128 77%, with
+# 32 scoring 90% on a held-out population. The good counts depend on the package's whole
+# hash set, so this is DOOM's number and not the loader's -- re-measure if the package
+# gains a file. ~90% is the ceiling here because a bank swap has only this one way in,
+# where the loader has two and reaches 100%.
+DEFAULT_DUPS = 32
 LOADER_TOOLS = os.path.join(os.environ.get("ACE_LOADER_DIR") or os.path.join(os.path.dirname(ROOT), "ACEUIModLoader"), "tools")
 
 # S_sfx order in doomgeneric/src/sounds.c (index = the number I_StartSound reports)
@@ -162,7 +170,14 @@ def main(argv):
         if not os.path.isfile(PATCHED_BANK):
             raise SystemExit("nothing to pack: build the bank first")
         out = os.path.join(ROOT, "dist", PACKAGE_NAME)
+        # gui.bank is an override, and an override with one table record wins the game's
+        # lookup only about half the time once anything else is installed (the base package
+        # is added first, so its record starts ahead of ours). Extra records for the same
+        # hash give it several places in that equal run. See pack_kspkg.py --dups.
+        dups = next((a.split("=", 1)[1] for a in argv if a.startswith("--dups=")), str(DEFAULT_DUPS))
         cmd = [sys.executable, os.path.join(LOADER_TOOLS, "pack_kspkg.py"), PACKAGE_DIR, out]
+        if int(dups) > 1:
+            cmd += [f"--dups={dups}", f"--dup={BANK_PATH}"]
         if "--install" in argv:
             cmd.append("--install")
         subprocess.run(cmd, check=True)
