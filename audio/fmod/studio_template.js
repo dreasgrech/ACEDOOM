@@ -134,7 +134,7 @@
             studio.project.save();
             for (var r = 0; r < report.length; r++) { log(report[r]); }
             studio.project.build();
-            alert(report.join("\n") + "\n\nBuilding. When it finishes, run in a terminal, from the ACEDOOM repo:\n  python tools/build_audio.py --install\n  python <ACEUIModLoader>/tools/install_mod.py doom\n(the first swaps these samples into the game's gui.bank and packs it; the second installs the loose half. Both are needed: they are two routes out of one sounds.json.)");
+            alert(report.join("\n") + "\n\nBuilding. When it finishes, run in a terminal, from the ACEDOOM repo:\n  python tools/build_audio.py --install\n  python <ACEUIModLoader>/tools/install_app.py doom\n(the first swaps these samples into the game's gui.bank and packs it; the second installs the loose half. Both are needed: they are two routes out of one sounds.json.)");
         }
     });
 

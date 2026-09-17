@@ -14,7 +14,7 @@ This tool rebuilds gui.bank's FSB5 with chosen samples replaced by samples from
 a bank FMOD Studio built for us (audio/fmod/project, platform encoding Vorbis, so
 the sample format matches), fixes the container and RIFF sizes and writes the
 result for pack_kspkg.py. With no replacements the output is byte-identical to
-the input (tests/test_mod.py checks that).
+the input (tests/test_app.py checks that).
 
 FSB5 layout (version 1): 60-byte header {magic, version, numSamples,
 sampleHeadersSize, nameTableSize, dataSize, mode, 8 zero bytes, 16-byte hash,

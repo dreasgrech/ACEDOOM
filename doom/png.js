@@ -1,5 +1,5 @@
 /**
- * ACEDoomPng -- a fixed-size PNG encoder for the ACE DOOM mod.
+ * ACEDoomPng -- a fixed-size PNG encoder for the ACE DOOM app.
  *
  * Why this exists: the game's Cohtml has a canvas but no putImageData/ImageData,
  * data: URLs are capped at 2048 characters, and there is no other way to hand a

@@ -1,4 +1,4 @@
-"""The shared ACEUIModLoader test kit (modkit.py in the loader repo) plus this mod's own contract."""
+"""The shared ACEUIModLoader test kit (appkit.py in the loader repo) plus this app's own contract."""
 import json
 import os
 import re
@@ -9,15 +9,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOADER = os.environ.get("ACE_LOADER_DIR") or os.path.join(os.path.dirname(ROOT), "ACEUIModLoader")
 sys.path.insert(0, os.path.join(LOADER, "tools"))
 
-from modkit import ModTests  # noqa: E402
+from appkit import AppTests  # noqa: E402
 
-MOD = os.path.join(ROOT, "doom")
-JS = os.path.join(MOD, "doom.js")
+APP = os.path.join(ROOT, "doom")
+JS = os.path.join(APP, "doom.js")
 WASM = os.path.join(ROOT, "third_party", "doom.wasm")
-MODULE = os.path.join(MOD, "doomjs.js")
+MODULE = os.path.join(APP, "doomjs.js")
 
 
-class Tests(ModTests):
+class Tests(AppTests):
     ROOT = ROOT
     MIN_CASES = 11
     HOT_PATH = ("// ---- rendering", "// ---- state changes")
@@ -71,7 +71,7 @@ class DoomContractTests(unittest.TestCase):
             self.js = f.read()
 
     def test_the_module_ships_and_every_import_it_needs_is_provided(self):
-        with open(os.path.join(MOD, "mod.json"), encoding="utf-8") as f:
+        with open(os.path.join(APP, "app.json"), encoding="utf-8") as f:
             info = json.load(f)
         self.assertEqual(info["files"], ["doomjs.js"], "the JavaScript build ships; the game exposes no WebAssembly")
         self.assertEqual(info["scripts"], ["png.js", "saves.js", "audiomap.js", "doom.js"], "the encoder, save codec and audio map load before the host")

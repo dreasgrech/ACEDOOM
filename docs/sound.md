@@ -26,7 +26,7 @@ from five fixed banks. So DOOM's sounds live **inside the game's UI bank**:
   are untouched. `sounds.json` `musicSwaps` also replaces one long garage
   sample with a DOOM music track (see Music below).
 - `build_audio.py --install` packs that `gui.bank` as
-  `ACEUIModLoaderMods-doom.kspkg` through the loader's `pack_kspkg.py`, named
+  `ACEUIModLoaderApps-doom.kspkg` through the loader's `pack_kspkg.py`, named
   to list after the loader package, padded so both overrides win. About
   150 MB, since the whole bank rides along.
 - The host asks the game for the GUI event type whose sample is now a DOOM
@@ -39,7 +39,7 @@ from five fixed banks. So DOOM's sounds live **inside the game's UI bank**:
   `gui.bank` ride in the package, and both have to win the lookup.
 
 **The effects and the music sit on different FMOD events, and that is the whole
-design** -- see Music below for why, because it is the reason this mod was silent
+design** -- see Music below for why, because it is the reason this app was silent
 for weeks.
 
 | GUI type | event, param | stock sample | DOOM sound | also sent there |
@@ -65,7 +65,7 @@ again**, and so is every menu click but the warning: the four claimed types are
 ones no stock line maps, so nothing else the game plays for itself changed. Every
 game update that changes `gui.bank` or the table needs the package rebuilt
 (`build_audio.py --install` does it from the installed game, and
-`install_mod.py` after it -- see below).
+`install_app.py` after it -- see below).
 
 ## How much room is left
 
@@ -109,7 +109,7 @@ and the garage bus is not faded.
 a small pool of instances and steals the oldest when it fills. A 103 s instance is
 permanently the oldest thing in its pool, so while DOOM's effects shared the garage
 event, its gunfire evicted the music within a frame or two -- audible effects,
-silent music. That is what the mod did from the day music was added until
+silent music. That is what the app did from the day music was added until
 2026-09-17, and no amount of rate-limiting would have fixed it: any cap still
 leaves the music first out whenever the pool fills.
 
@@ -158,7 +158,7 @@ stock table leaves unmapped (`GUI_SWITCH_*`, `GUI_MONEY_*`, `GUI_LEVEL_*`), whic
 costs nothing the game plays for itself.
 
 **The parameter-to-sample map, measured by ear** -- there is no other way, and
-`patch_bank.py` swaps by sample name, so this is the map the whole mod rests on:
+`patch_bank.py` swaps by sample name, so this is the map the whole app rests on:
 
 | param | stock sample | used by |
 |---|---|---|
@@ -179,11 +179,11 @@ guessed wrong before `probes` settled them.
 ## Things that cost a launch to learn
 
 **The two halves ship by different routes.** `gui.bank` and `gui_events.table` are
-packed; `doom/audiomap.js` is a loose mod file. They are generated from the same
+packed; `doom/audiomap.js` is a loose app file. They are generated from the same
 `sounds.json`, and installing one without the other is silent and reads exactly
 like a sound bug -- with a stale map the host asks for the types it used to use,
 whose samples are stock again, so DOOM's pistol comes out as Kunos' spray gun.
-`build_audio.py --install` prints a reminder; run `install_mod.py` after it.
+`build_audio.py --install` prints a reminder; run `install_app.py` after it.
 
 **Both overrides must win, not either.** The bank without the table plays DOOM's
 samples on types nothing fires; the table without the bank fires types whose

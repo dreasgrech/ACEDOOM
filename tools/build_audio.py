@@ -9,7 +9,7 @@ build_audio.py - everything the audio path derives from audio/sounds.json.
   3. build/package/content/sfx/gui.bank
                                      the game's UI bank with the slots' stock samples replaced by
                                      ours (tools/patch_bank.py), from the bank Studio built;
-  4. with --pack / --install         ACEUIModLoaderMods-doom.kspkg carrying that gui.bank, packed by
+  4. with --pack / --install         ACEUIModLoaderApps-doom.kspkg carrying that gui.bank, packed by
                                      the loader's pack_kspkg.py (named to list after the loader).
 
 Usage:
@@ -49,7 +49,7 @@ OUR_BANK_DIRS = (os.path.join(ROOT, "audio", "acevo_content"), os.path.join(PROJ
 MUSIC_DIR = os.path.join(os.path.dirname(ROOT), "console-doom", "music")
 PACKAGE_DIR = os.path.join(ROOT, "build", "package")
 PATCHED_BANK = os.path.join(PACKAGE_DIR, "content", "sfx", "gui.bank")
-PACKAGE_NAME = "ACEUIModLoaderMods-doom.kspkg"
+PACKAGE_NAME = "ACEUIModLoaderApps-doom.kspkg"
 BANK_PATH = "content/sfx/gui.bank"          # the samples DOOM's sounds are swapped into
 TABLE_PATH = "system/gui_events.table"      # the map that reaches gui_navigation params 5-8
 BANK_IN_TABLE = "content\\sfx\\gui.bank"      # how the table spells it
@@ -356,13 +356,13 @@ def main(argv):
                 _shutil.rmtree(stock, ignore_errors=True)
         if "--install" in argv:
             # audiomap.js and gui.bank are two halves of the same sounds.json, and they ship
-            # by different routes: the bank is packed, the map is a loose mod file. Installing
+            # by different routes: the bank is packed, the map is a loose app file. Installing
             # one without the other is silent and looks like a sound bug -- with a stale map
             # the host asks for the types it used to use, whose samples are stock again, so
             # DOOM's pistol comes out as Kunos' spray gun. It cost a launch on 2026-09-17.
             print("\nNOTE: the package is installed, but doom/audiomap.js is a LOOSE file and"
                   "\n      this did not install it. The map and the bank must match:"
-                  "\n      python <ACEUIModLoader>/tools/install_mod.py " + os.path.join(ROOT, "doom"))
+                  "\n      python <ACEUIModLoader>/tools/install_app.py " + os.path.join(ROOT, "doom"))
 
 
 if __name__ == "__main__":

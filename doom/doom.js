@@ -1,5 +1,5 @@
 /**
- * ACE DOOM -- DOOM (1993) running inside the Assetto Corsa EVO HUD as a UI mod,
+ * ACE DOOM -- DOOM (1993) running inside the Assetto Corsa EVO HUD as a UI app,
  * built on the ACEUIModLoader library.
  *
  * The game itself is jacobenget/doom.wasm (the id Software source under the GPL,
@@ -9,7 +9,7 @@
  * wasm2js (tools/build_module.py), which defines `ACEDoomModule(imports)` and
  * returns the module's exports. This file is the host:
  *
- *   - loads that script from the mod folder and instantiates the module;
+ *   - loads that script from the app folder and instantiates the module;
  *   - runs `tickGame()` at DOOM's 35 Hz from the shared frame loop, feeding it a
  *     clock that only advances while the panel is open, so closing it pauses;
  *   - shows every frame the module draws: the BGRA buffer becomes a PNG
@@ -33,12 +33,12 @@
  *     audio/sounds.json) to DOOM events in acedoom.bank. The module's audio
  *     imports report which sound starts; the host asks for the matching type.
  *
- * The loader creates `<div id="doom">` and `ACEUIModLoader.mod("doom")` describes
- * the mod, so identity is not repeated here. Styling lives in doom.css.
+ * The loader creates `<div id="doom">` and `ACEUIModLoader.app("doom")` describes
+ * the app, so identity is not repeated here. Styling lives in doom.css.
  */
 const ACEDoom = (function () {
 
-    const me = ACEUIModLoader.mod("doom");
+    const me = ACEUIModLoader.app("doom");
     const log = me.log;
     const setClass = ACEUIModLoader.dom.setClass;
     const persist = ACEUIModLoader.persist;
@@ -230,7 +230,7 @@ const ACEDoom = (function () {
         hint: "dm-hint"
     };
 
-    /** The mod folder's URL: from this script's own src, or the loader's description. */
+    /** The app folder's URL: from this script's own src, or the loader's description. */
     const scriptBase = function () {
         const script = document.currentScript;
         const src = script && script.src ? String(script.src) : "";
@@ -446,7 +446,7 @@ const ACEDoom = (function () {
      * `writeSaveGame` gets the bytes and `sizeOfSaveGame` / `readSaveGame` have to give
      * them back -- including after the game has been closed and reopened, which is the
      * point. The slots live in memory, and a compacted copy (saves.js) goes to both of
-     * the stores a mod has: localStorage, which survives the HUD page reload that
+     * the stores an app has: localStorage, which survives the HUD page reload that
      * Escape/resume causes, and the engine's key/value container, which reaches disk.
      *
      * Two things about the module's side are worth knowing, because both look like bugs:
@@ -912,7 +912,7 @@ const ACEDoom = (function () {
      * takes it too, since you just asked for DOOM.
      *
      * ACEUIModLoader.input counts holders, so this neither steals the keyboard from
-     * another mod nor hands it back while one still wants it (the dev console holds it
+     * another app nor hands it back while one still wants it (the dev console holds it
      * while its prompt has focus).
      */
     const releaseKeys = function (state) {
@@ -962,7 +962,7 @@ const ACEDoom = (function () {
      * Screen scale, through `me.scale`: one font-size in rem on the root, everything
      * inside in em. DOOM had its own copy of this, which wrote the style and stored the
      * value but never *listened* -- so moving the slider in the settings window changed
-     * the stored number and nothing on the screen until the mod was restarted. The
+     * the stored number and nothing on the screen until the app was restarted. The
      * library's version follows the setting both ways, and is the same one the console,
      * the profiler and the probe use.
      */
@@ -1194,4 +1194,4 @@ const ACEDoom = (function () {
 }());
 
 /* Attach to #doom: the loader creates it in game, the preview page carries it. */
-ACEUIModLoader.mod("doom").mount(ACEDoom.attach, ACEDoom.detach);
+ACEUIModLoader.app("doom").mount(ACEDoom.attach, ACEDoom.detach);

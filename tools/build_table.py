@@ -7,7 +7,8 @@ UIAudioRequestAudioEvent { type: <AudioGuiEventType> } and the game looks the
 type up in system/gui_events.table (a TableData protobuf inside content.kspkg):
 each line maps a type to an FMOD event path, a bank file path and a parameter
 value. Types the stock table leaves unmapped (GUI_MUSIC_INTRO, GUI_SWITCH_*,
-GUI_MONEY_*, GUI_LEVEL_*) are free for a mod; the livery-editor types
+GUI_MONEY_*, GUI_LEVEL_*) are free to claim -- the claim is a line in a packaged
+table, so a mod makes it and an app fires it; the livery-editor types
 (GUI_PAINT_*, ...) can be borrowed at the price of odd sounds in that editor.
 
 This tool reads the stock table from content.kspkg, appends the lines given in a

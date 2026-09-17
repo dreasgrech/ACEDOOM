@@ -4,7 +4,7 @@
  * doom.wasm hands saving to its host: the module calls `gameSaving.writeSaveGame`
  * with a pointer and a length and expects those bytes back later through
  * `sizeOfSaveGame` / `readSaveGame`. Keeping them in memory is easy; keeping them
- * across a game restart is the hard part, because the only writable store a UI mod
+ * across a game restart is the hard part, because the only writable store a UI app
  * has is the engine's key/value container, whose values are JSON strings.
  *
  * So a save has to become text, and it has to become *small* text: the module asks
@@ -20,7 +20,7 @@
  *     const bytes = ACEDoomSaves.decode(text);   // string -> Uint8Array, or null
  *
  * `decode` returns null for anything it cannot read rather than throwing: stored
- * text comes from an earlier run of this mod, so it is never trusted.
+ * text comes from an earlier run of this app, so it is never trusted.
  */
 const ACEDoomSaves = (function () {
 
@@ -327,7 +327,7 @@ const ACEDoomSaves = (function () {
         return out;
     };
 
-    // ---- the pair the mod uses -------------------------------------------------------
+    // ---- the pair the app uses -------------------------------------------------------
 
     const encode = function (bytes) {
         return toBase64(compress(bytes));

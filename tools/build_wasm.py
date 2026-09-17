@@ -178,7 +178,7 @@ def post_link(binaryen, stage, raw):
 
 
 def imports_of(path):
-    """(module, name) of every function import; the same walk tests/test_mod.py does."""
+    """(module, name) of every function import; the same walk tests/test_app.py does."""
     def leb(buf, pos):
         result = shift = 0
         while True:

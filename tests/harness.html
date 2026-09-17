@@ -24,7 +24,7 @@
 (function () {
     const H = window.__harness;
     const t = H.t, eq = H.eq, ok = H.ok;
-    const me = ACEUIModLoader.mod("doom");
+    const me = ACEUIModLoader.app("doom");
     const extra = [];
     let frame = 1000;
     let finished = false;
@@ -304,7 +304,7 @@
 
                         /* the same value moved from the settings window has to reach the
                            screen: DOOM's own scaling stored the number and never listened,
-                           so the slider there did nothing until the mod restarted */
+                           so the slider there did nothing until the app restarted */
                         ACEUIModLoader.settings.set("doom", "scale", 3);
                         eq(root.style.fontSize, "3rem", "the settings window moves the screen too");
                         eq(state.scale, 3, "and the state agrees");

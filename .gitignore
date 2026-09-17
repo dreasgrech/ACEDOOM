@@ -2,7 +2,7 @@
 __pycache__/
 *.pyc
 
-# editor swap / temp files (install_mod.py skips them too)
+# editor swap / temp files (install_app.py skips them too)
 *.swp
 *~
 

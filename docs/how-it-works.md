@@ -23,7 +23,7 @@ and no game file touched. Five problems had to be solved; none of them the ones 
   (which survives the HUD page reload on Escape/resume) and to the engine's
   key/value container (which reaches disk), so **a saved game survives closing the
   game**. See "Saving" below.
-- **The host** is `doom/doom.js`: it loads that script from the mod's own
+- **The host** is `doom/doom.js`: it loads that script from the app's own
   folder, instantiates the module, runs `tickGame()` at DOOM's 35 Hz from the
   loader's shared frame loop and feeds it a clock that only advances while the
   panel is open, so hiding the panel pauses the game. DOOM busy-waits on that
