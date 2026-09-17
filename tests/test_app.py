@@ -99,7 +99,9 @@ class DoomContractTests(unittest.TestCase):
         """doom.wasm leaves saving to its host; returning 0 from these is what "no saving" looks like."""
         block = self.js[self.js.find("gameSaving: {"):self.js.find("loading: {")]
         self.assertNotIn("return 0; }", block, "the three gameSaving imports must do real work")
-        for call in ("sizeOfSave(state, slot)", "readSave(state, slot, ptr)", "writeSave(state, slot, ptr, length)"):
+        # the imports are wired once at instantiate and the engine outlives any one attach,
+        # so they resolve the attached state per call rather than closing over one
+        for call in ("sizeOfSave(live(), slot)", "readSave(live(), slot, ptr)", "writeSave(live(), slot, ptr, length)"):
             self.assertIn(call, block, f"gameSaving wired to {call}")
         self.assertIn("return length;", self.js, "the module compares what we return with the length it passed")
         self.assertIn("ACEDoomSaves.encode", self.js, "slots are compacted before they are stored")
@@ -121,8 +123,8 @@ class DoomContractTests(unittest.TestCase):
 
     def test_the_clock_is_legalised_and_only_runs_while_open(self):
         clock = self.js[self.js.find("timeInMilliseconds: function"):self.js.find("ui: {")]
-        self.assertIn("return Math.floor(doom.clockMs);", clock, "low 32 bits of the legalised i64 import")
-        self.assertIn("if (doom.polls > POLL_LIMIT) {", clock, "busy-waits inside one tick must end")
+        self.assertIn("return Math.floor(doomEngine.clockMs);", clock, "low 32 bits of the legalised i64 import")
+        self.assertIn("if (doomEngine.polls > POLL_LIMIT) {", clock, "busy-waits inside one tick must end")
         self.assertIn("state.doom.polls = 0;", self.js)
         self.assertIn("if (!state.open || ACEUIAppLoader.hudHidden() || doom.phase !== PHASE.running) {", self.js)
         self.assertIn("doom.clockMs += step;", self.js)

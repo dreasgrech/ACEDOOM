@@ -410,6 +410,40 @@
                         keyEvent("keydown", 45); eq(state.open, false, "toggle key released");
                     });
 
+                    t("the app drawer switching DOOM off and on does not reload the module", function () {
+                        /* It used to: `phase` lived on `state`, `attach` builds a fresh one, and
+                           `addScript` never dedupes -- so every off/on fetched 6.9 MB again, made
+                           another 15.5 MB instance, and put the player back at the title screen.
+                           Measured at one module per cycle, growing linearly. */
+                        const modules = function () {
+                            return document.querySelectorAll("script[src$='doomjs.js']").length;
+                        };
+                        const before = modules();
+
+                        ok(before >= 1, "the module was loaded once to begin with: " + before);
+
+                        let again = null;
+
+                        for (let i = 0; i < 5; i += 1) {
+                            again = ACEDoom.attach(root);
+                            ACEDoom.setOpen(again, true);
+
+                            /* Not just the module: everything the FIRST boot handed the state
+                               has to reach every later one. `onGameInit` comes from initGame(),
+                               which runs once, and it is what sizes the PNG encoder -- so a
+                               reused engine left each new panel with encoder === null and the
+                               picture path threw on its first frame. */
+                            ok(again.encoder, "cycle " + i + ": the panel has an encoder");
+                            eq(again.encoder.width, state.encoder.width, "cycle " + i + ": same frame width");
+                            eq(again.encoder.height, state.encoder.height, "cycle " + i + ": same frame height");
+                            eq(again.doom.phase, "running", "cycle " + i + ": the game kept running");
+
+                            ACEDoom.detach(again);
+                        }
+
+                        eq(modules(), before, "five off/on cycles, still one module");
+                    });
+
                     finish();
                 }, 100);
             }, 100);

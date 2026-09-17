@@ -200,6 +200,43 @@ const ACEDoom = (function () {
 
     const PHASE = { idle: "idle", loading: "loading", compiling: "compiling", running: "running", failed: "failed" };
 
+    /**
+     * The DOOM engine, and it outlives any one attach. Named doomEngine, not engine:
+     * `engine` is the game's own global, the one `engine.trigger` sends UI commands on,
+     * and a module-level `const engine` here silently shadows it for the whole file.
+     *
+     * It used to live on `state`, which `attach` builds fresh -- so switching DOOM off and
+     * on in the app drawer found `phase === idle` and loaded the 6.9 MB module again: a new
+     * <script> and a new 15.5 MB instance every time, and the player's game back at the
+     * title screen. Measured at one module per off/on cycle, growing linearly.
+     *
+     * Kept here it is loaded once per page, and a drawer toggle stops the frame loop and
+     * starts it again with the game exactly where it was. The page reload on pause/resume
+     * is what clears it, which is also what frees the memory.
+     */
+    const doomEngine = {
+        phase: PHASE.idle,
+        exports: null,
+        memory: null,
+        width: 0,
+        height: 0,
+        framePtr: 0,
+        frameDirty: false,
+        clockMs: 0,             // DOOM's clock: advances only while open and running
+        polls: 0,               // clock reads within the current tickGame call, see POLL_LIMIT
+        keys: {},               // keyCode -> DOOM key, from the module's KEY_* globals
+        named: {}               // key/code name -> DOOM key, same source
+    };
+
+    /**
+     * Whichever state is attached right now. The module's imports are wired once, at
+     * instantiate, and the engine outlives the state that booted it -- so they have to ask
+     * for the live one every call rather than close over the state of the day.
+     */
+    const live = function () {
+        return attached;
+    };
+
     const ACTION_ATTR = "data-action";
     const NO_DRAG_ATTR = "data-nodrag";
     const ACTION_SMALLER = "smaller";
@@ -308,19 +345,7 @@ const ACEDoom = (function () {
             savedChars: 0,              // size of the last stored copy, for the settings pane
             base: SCRIPT_BASE,
             encoder: null,              // ACEDoomPng encoder, sized by onGameInit
-            doom: {
-                phase: PHASE.idle,
-                exports: null,
-                memory: null,
-                width: 0,
-                height: 0,
-                framePtr: 0,
-                frameDirty: false,
-                clockMs: 0,             // DOOM's clock: advances only while open and running
-                polls: 0,               // clock reads within the current tickGame call, see POLL_LIMIT
-                keys: {},               // keyCode -> DOOM key, from the module's KEY_* globals
-                named: {}               // key/code name -> DOOM key, same source
-            },
+            doom: doomEngine,           // shared, so a drawer toggle does not reload the module
             stats: newStats(),
             lastNow: 0,
             lastTickAt: 0,
@@ -365,12 +390,22 @@ const ACEDoom = (function () {
         });
     };
 
-    const onGameInit = function (state, width, height) {
-        const step = width % NATIVE_WIDTH === 0 ? width / NATIVE_WIDTH : 1;
+    /**
+     * The encoder is sized by the engine's frame but owned by the panel, and the engine
+     * announces that size exactly once -- `onGameInit` comes from `initGame()`, which runs
+     * on the first boot only. Every later attach has to size its own, or it presents with a
+     * null encoder and the picture path throws on the first frame.
+     */
+    const sizeEncoder = function (state) {
+        const step = doomEngine.width % NATIVE_WIDTH === 0 ? doomEngine.width / NATIVE_WIDTH : 1;
 
-        state.doom.width = width;
-        state.doom.height = height;
-        state.encoder = ACEDoomPng.create(width, height, step);
+        state.encoder = ACEDoomPng.create(doomEngine.width, doomEngine.height, step);
+    };
+
+    const onGameInit = function (state, width, height) {
+        doomEngine.width = width;
+        doomEngine.height = height;
+        sizeEncoder(state);
     };
 
     // ---- audio: DOOM's sound calls, reported by the module's ACEDOOM patch -------------------
@@ -600,49 +635,64 @@ const ACEDoom = (function () {
      * which wasm2js adds to legalise the i64 clock (low 32 bits returned, high 32
      * read back through it). The embedded shareware WAD is used.
      */
-    const imports = function (state) {
+    const imports = function () {
         return {
             env: {
                 getTempRet0: function () { return 0; }
             },
             audio: {
-                onSoundStart: function (sfxId, volume, separation) { onSoundStart(state, sfxId, volume, separation); },
-                onMusicStart: function (musicId, looping) { onMusicStart(state, musicId, looping); },
-                onMusicStop: function () { onMusicStop(state); }
+                onSoundStart: function (sfxId, volume, separation) {
+                    if (live()) { onSoundStart(live(), sfxId, volume, separation); }
+                },
+                onMusicStart: function (musicId, looping) {
+                    if (live()) { onMusicStart(live(), musicId, looping); }
+                },
+                onMusicStop: function () {
+                    if (live()) { onMusicStop(live()); }
+                }
             },
             console: {
-                onInfoMessage: function (ptr, length) { logModuleText(state, "doom: ", ptr, length); },
-                onErrorMessage: function (ptr, length) { logModuleText(state, "doom error: ", ptr, length); }
+                onInfoMessage: function (ptr, length) {
+                    if (live()) { logModuleText(live(), "doom: ", ptr, length); }
+                },
+                onErrorMessage: function (ptr, length) {
+                    if (live()) { logModuleText(live(), "doom error: ", ptr, length); }
+                }
             },
             gameSaving: {
-                sizeOfSaveGame: function (slot) { return sizeOfSave(state, slot); },
-                readSaveGame: function (slot, ptr) { return readSave(state, slot, ptr); },
-                writeSaveGame: function (slot, ptr, length) { return writeSave(state, slot, ptr, length); }
+                sizeOfSaveGame: function (slot) { return live() ? sizeOfSave(live(), slot) : 0; },
+                readSaveGame: function (slot, ptr) { return live() ? readSave(live(), slot, ptr) : 0; },
+                writeSaveGame: function (slot, ptr, length) {
+                    return live() ? writeSave(live(), slot, ptr, length) : 0;
+                }
             },
             loading: {
-                onGameInit: function (width, height) { onGameInit(state, width, height); },
+                onGameInit: function (width, height) {
+                    if (live()) { onGameInit(live(), width, height); }
+                },
                 wadSizes: function () {},
                 readWads: function () {}
             },
             runtimeControl: {
                 timeInMilliseconds: function () {
-                    const doom = state.doom;
+                    doomEngine.polls += 1;
 
-                    doom.polls += 1;
-
-                    if (doom.polls > POLL_LIMIT) {
-                        doom.polls = 0;
-                        doom.clockMs += TIC_MS;
+                    if (doomEngine.polls > POLL_LIMIT) {
+                        doomEngine.polls = 0;
+                        doomEngine.clockMs += TIC_MS;
                     }
 
-                    return Math.floor(doom.clockMs);
+                    return Math.floor(doomEngine.clockMs);
                 }
             },
             ui: {
                 drawFrame: function (ptr) {
-                    state.doom.framePtr = ptr;
-                    state.doom.frameDirty = true;
-                    state.stats.drawn += 1;
+                    const state = live();
+
+                    doomEngine.framePtr = ptr;
+                    doomEngine.frameDirty = true;
+
+                    if (state) { state.stats.drawn += 1; }
                 }
             }
         };
@@ -668,8 +718,9 @@ const ACEDoom = (function () {
         return { keys: keys, named: named };
     };
 
-    const started = function (state, exports, instantiateMs) {
-        const doom = state.doom;
+    const started = function (booted, exports, instantiateMs) {
+        const state = live() || booted;
+        const doom = doomEngine;
         const t0 = Date.now();
         const map = keyMap(exports);
 
@@ -693,11 +744,28 @@ const ACEDoom = (function () {
         setStatus(state, "running");
     };
 
-    /** Load the module's script once and instantiate it; later calls are no-ops. */
+    /**
+     * Load the module's script once per page and instantiate it; later calls are no-ops.
+     *
+     * "Once per page", not once per attach: `doomEngine.phase` outlives the state, so opening
+     * DOOM again after a drawer toggle finds it already running and picks the game up where
+     * it was, instead of fetching 6.9 MB and starting a new one at the title screen.
+     */
     const boot = function (state) {
-        const doom = state.doom;
+        const doom = doomEngine;
         const url = state.base + MODULE_FILE;
         const t0 = Date.now();
+
+        if (doom.phase === PHASE.running) {
+            // a fresh panel in front of the game that was already running: everything the
+            // first boot handed the state has to be handed to this one too
+            sizeEncoder(state);
+            state.lastTickAt = 0;
+            doom.frameDirty = true;
+            setStatus(state, "running");
+
+            return;
+        }
 
         if (doom.phase !== PHASE.idle) { return; }
 
@@ -710,7 +778,7 @@ const ACEDoom = (function () {
             let exports;
 
             if (!ok || typeof factory !== "function") {
-                fail(state, "could not load " + url + (ok ? " (no " + MODULE_GLOBAL + " in it)" : ""));
+                fail(live() || state, "could not load " + url + (ok ? " (no " + MODULE_GLOBAL + " in it)" : ""));
                 return;
             }
 
@@ -719,9 +787,9 @@ const ACEDoom = (function () {
             setStatus(state, "instantiating");
 
             try {
-                exports = factory(imports(state));
+                exports = factory(imports());
             } catch (e) {
-                fail(state, "instantiate threw: " + e);
+                fail(live() || state, "instantiate threw: " + e);
                 return;
             }
 
@@ -1100,9 +1168,11 @@ const ACEDoom = (function () {
             value: typeof storedScale === "number" ? storedScale : SCALE_DEFAULT,
             onScale: function (value) { state.scale = value; }
         });
-        setOpen(state, Boolean(storedOpen));
+        // before setOpen, which boots the module on first open: the module's imports ask
+        // live() for the state, and during that boot this is the only one there is
         attached = state;
         loadSaves(state);
+        setOpen(state, Boolean(storedOpen));
 
         state.ui = me.panel(root, function (now) { tick(state, now); });
         log("attached, " + (state.open ? "open" : "closed") + ", scale " + state.scale
