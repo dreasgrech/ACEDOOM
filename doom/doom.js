@@ -1,6 +1,6 @@
 /**
  * ACE DOOM -- DOOM (1993) running inside the Assetto Corsa EVO HUD as a UI app,
- * built on the ACEUIModLoader library.
+ * built on the ACEUIAppLoader library.
  *
  * The game itself is jacobenget/doom.wasm (the id Software source under the GPL,
  * built as a plain WebAssembly module with the shareware WAD embedded; ten small
@@ -33,18 +33,18 @@
  *     audio/sounds.json) to DOOM events in acedoom.bank. The module's audio
  *     imports report which sound starts; the host asks for the matching type.
  *
- * The loader creates `<div id="doom">` and `ACEUIModLoader.app("doom")` describes
+ * The loader creates `<div id="doom">` and `ACEUIAppLoader.app("doom")` describes
  * the app, so identity is not repeated here. Styling lives in doom.css.
  */
 const ACEDoom = (function () {
 
-    const me = ACEUIModLoader.app("doom");
+    const me = ACEUIAppLoader.app("doom");
     const log = me.log;
-    const setClass = ACEUIModLoader.dom.setClass;
-    const persist = ACEUIModLoader.persist;
-    const el = ACEUIModLoader.el;
-    const close = ACEUIModLoader.close;
-    const toArray = ACEUIModLoader.toArray;
+    const setClass = ACEUIAppLoader.dom.setClass;
+    const persist = ACEUIAppLoader.persist;
+    const el = ACEUIAppLoader.el;
+    const close = ACEUIAppLoader.close;
+    const toArray = ACEUIAppLoader.toArray;
 
     const MODULE_FILE = "doomjs.js";
     const MODULE_GLOBAL = "ACEDoomModule";
@@ -141,7 +141,7 @@ const ACEDoom = (function () {
      * is here because a hardcoded hotkey collides with whatever the player has bound in
      * the game; this lets them move ours rather than lose theirs.
      */
-    const options = ACEUIModLoader.settings.define(me.name, [
+    const options = ACEUIAppLoader.settings.define(me.name, [
             {
                 key: "toggleKey",
                 type: "key",
@@ -175,10 +175,10 @@ const ACEDoom = (function () {
     ]);
     /**
      * Key names, the legacy keyCodes the engine reports, and the characters `key` sends
-     * instead of names: all three live in ACEUIModLoader.keys, which DOOM and the dev
+     * instead of names: all three live in ACEUIAppLoader.keys, which DOOM and the dev
      * console had each grown a partial copy of. This one was missing Escape.
      */
-    const keyLib = ACEUIModLoader.keys;
+    const keyLib = ACEUIAppLoader.keys;
     /** Key name -> the module's exported global holding DOOM's code for it. */
     const SPECIAL_KEYS = [
         ["ArrowLeft", "KEY_LEFTARROW"], ["ArrowRight", "KEY_RIGHTARROW"], ["ArrowUp", "KEY_UPARROW"],
@@ -704,7 +704,7 @@ const ACEDoom = (function () {
         doom.phase = PHASE.loading;
         setStatus(state, "loading");
         log("loading " + url);
-        ACEUIModLoader.addScript(url, function (ok) {
+        ACEUIAppLoader.addScript(url, function (ok) {
             const factory = window[MODULE_GLOBAL];
             const t1 = Date.now();
             let exports;
@@ -870,7 +870,7 @@ const ACEDoom = (function () {
 
         if (!state.savesLoaded) { pollStoredSaves(state); }
 
-        if (!state.open || ACEUIModLoader.hudHidden() || doom.phase !== PHASE.running) {
+        if (!state.open || ACEUIAppLoader.hudHidden() || doom.phase !== PHASE.running) {
             state.statsAt = now;
             return;
         }
@@ -881,7 +881,7 @@ const ACEDoom = (function () {
 
         if (now - state.lastTickAt >= TIC_MS) {
             state.lastTickAt = now;
-            ACEUIModLoader.section("doom tic", function () { runTick(state); });
+            ACEUIAppLoader.section("doom tic", function () { runTick(state); });
         }
 
         if (state.music && state.music.startedAt >= 0 && state.music.lengthMs > 0
@@ -892,7 +892,7 @@ const ACEDoom = (function () {
         watchPending(state, now);
 
         if (doom.frameDirty && !state.presentingFailed) {
-            ACEUIModLoader.section("present frame", function () { present(state, now); });
+            ACEUIAppLoader.section("present frame", function () { present(state, now); });
         }
 
         if (now - state.statsAt >= STATS_EVERY_MS) {
@@ -911,7 +911,7 @@ const ACEDoom = (function () {
      * panel takes the keyboard, clicking anywhere else gives it back. Opening the panel
      * takes it too, since you just asked for DOOM.
      *
-     * ACEUIModLoader.input counts holders, so this neither steals the keyboard from
+     * ACEUIAppLoader.input counts holders, so this neither steals the keyboard from
      * another app nor hands it back while one still wants it (the dev console holds it
      * while its prompt has focus).
      */
@@ -923,7 +923,7 @@ const ACEDoom = (function () {
     };
 
     const grabKeys = function (state) {
-        const input = ACEUIModLoader.input;
+        const input = ACEUIAppLoader.input;
 
         releaseKeys(state);
 
@@ -1061,7 +1061,7 @@ const ACEDoom = (function () {
     };
 
     const onClick = function (state, e) {
-        const action = ACEUIModLoader.closestWithAttribute(e.target, ACTION_ATTR, state.root);
+        const action = ACEUIAppLoader.closestWithAttribute(e.target, ACTION_ATTR, state.root);
         const name = action ? action.getAttribute(ACTION_ATTR) : "";
 
         if (name === ACTION_SMALLER) { state.scaler.nudge(-1); }
@@ -1076,9 +1076,9 @@ const ACEDoom = (function () {
     const attach = function (root) {
         const state = create(root);
         const storedOpen = me.recall("open", false);
-        const storedScale = ACEUIModLoader.settings.get(me.name, "scale");
+        const storedScale = ACEUIAppLoader.settings.get(me.name, "scale");
 
-        state.bag = ACEUIModLoader.dom.listeners();
+        state.bag = ACEUIAppLoader.dom.listeners();
         state.bag.on(window, "keydown", function (e) { onKey(state, e, true); }, true);
         state.bag.on(window, "keyup", function (e) { onKey(state, e, false); }, true);
         state.bag.on(window, "mouseup", function () { onMouseUp(state); });
@@ -1090,7 +1090,7 @@ const ACEDoom = (function () {
         });
 
         // the hint advertises the show/hide key, so it follows the setting as well
-        state.unsubscribeSettings = ACEUIModLoader.settings.onChange(me.name, function (key) {
+        state.unsubscribeSettings = ACEUIAppLoader.settings.onChange(me.name, function (key) {
             if (key === "toggleKey" && state.hint) { state.hint.textContent = hintText(); }
         });
         state.scaler = me.scale(root, {
@@ -1194,4 +1194,4 @@ const ACEDoom = (function () {
 }());
 
 /* Attach to #doom: the loader creates it in game, the preview page carries it. */
-ACEUIModLoader.app("doom").mount(ACEDoom.attach, ACEDoom.detach);
+ACEUIAppLoader.app("doom").mount(ACEDoom.attach, ACEDoom.detach);

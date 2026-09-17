@@ -26,9 +26,9 @@ from five fixed banks. So DOOM's sounds live **inside the game's UI bank**:
   are untouched. `sounds.json` `musicSwaps` also replaces one long garage
   sample with a DOOM music track (see Music below).
 - `build_audio.py --install` packs that `gui.bank` as
-  `ACEUIModLoaderApps-doom.kspkg` through the loader's `pack_kspkg.py`, named
-  to list after the loader package, padded so both overrides win. About
-  150 MB, since the whole bank rides along.
+  `ACEUIAppLoader-doom.kspkg` through the loader's `pack_kspkg.py`, which
+  models the loader package too and pads so both packages' overrides win.
+  About 150 MB, since the whole bank rides along.
 - The host asks the game for the GUI event type whose sample is now a DOOM
   sound (`doom/audiomap.js`, generated from `sounds.json`): volume above 24 of
   127, at most 6 requests per frame.

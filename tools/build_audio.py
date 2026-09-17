@@ -9,8 +9,9 @@ build_audio.py - everything the audio path derives from audio/sounds.json.
   3. build/package/content/sfx/gui.bank
                                      the game's UI bank with the slots' stock samples replaced by
                                      ours (tools/patch_bank.py), from the bank Studio built;
-  4. with --pack / --install         ACEUIModLoaderApps-doom.kspkg carrying that gui.bank, packed by
-                                     the loader's pack_kspkg.py (named to list after the loader).
+  4. with --pack / --install         ACEUIAppLoader-doom.kspkg carrying that gui.bank, packed by
+                                     the loader's pack_kspkg.py (which models the loader's own
+                                     records too, wherever the two names sort).
 
 Usage:
     python tools/build_audio.py [--pack] [--install] [--no-bank] [--release] [--dups=N]
@@ -49,7 +50,7 @@ OUR_BANK_DIRS = (os.path.join(ROOT, "audio", "acevo_content"), os.path.join(PROJ
 MUSIC_DIR = os.path.join(os.path.dirname(ROOT), "console-doom", "music")
 PACKAGE_DIR = os.path.join(ROOT, "build", "package")
 PATCHED_BANK = os.path.join(PACKAGE_DIR, "content", "sfx", "gui.bank")
-PACKAGE_NAME = "ACEUIModLoaderApps-doom.kspkg"
+PACKAGE_NAME = "ACEUIAppLoader-doom.kspkg"
 BANK_PATH = "content/sfx/gui.bank"          # the samples DOOM's sounds are swapped into
 TABLE_PATH = "system/gui_events.table"      # the map that reaches gui_navigation params 5-8
 BANK_IN_TABLE = "content\\sfx\\gui.bank"      # how the table spells it
@@ -63,7 +64,7 @@ BANK_IN_TABLE = "content\\sfx\\gui.bank"      # how the table spells it
 #   tune_dups.tune(package_dir, [BANK_PATH, TABLE_PATH], ..., require="all",
 #                  package_name=PACKAGE_NAME)
 DEFAULT_DUPS = 128
-LOADER_TOOLS = os.path.join(os.environ.get("ACE_LOADER_DIR") or os.path.join(os.path.dirname(ROOT), "ACEUIModLoader"), "tools")
+LOADER_TOOLS = os.path.join(os.environ.get("ACE_LOADER_DIR") or os.path.join(os.path.dirname(ROOT), "ACEUIAppLoader"), "tools")
 
 # S_sfx order in doomgeneric/src/sounds.c (index = the number I_StartSound reports)
 SFX_NAMES = ("none pistol shotgn sgcock dshtgn dbopn dbcls dbload plasma bfg sawup sawidl sawful sawhit rlaunc rxplod "
@@ -331,7 +332,7 @@ def main(argv):
             # the loader, so the loader is always alongside it. Planning against nothing at all
             # produced a package that won on its own and lost both overrides the moment the
             # loader was there (2026-09-17) -- which is every real installation.
-            loader_pkg = os.path.join(os.path.dirname(LOADER_TOOLS), "dist", "ACEUIModLoader.kspkg")
+            loader_pkg = os.path.join(os.path.dirname(LOADER_TOOLS), "dist", "ACEUIAppLoader.kspkg")
             if not os.path.isfile(loader_pkg):
                 raise SystemExit("--release needs the loader's release package built first:\n  "
                                  + loader_pkg + "\nBuild it with --release there, then come back.")
@@ -362,7 +363,7 @@ def main(argv):
             # DOOM's pistol comes out as Kunos' spray gun. It cost a launch on 2026-09-17.
             print("\nNOTE: the package is installed, but doom/audiomap.js is a LOOSE file and"
                   "\n      this did not install it. The map and the bank must match:"
-                  "\n      python <ACEUIModLoader>/tools/install_app.py " + os.path.join(ROOT, "doom"))
+                  "\n      python <ACEUIAppLoader>/tools/install_app.py " + os.path.join(ROOT, "doom"))
 
 
 if __name__ == "__main__":

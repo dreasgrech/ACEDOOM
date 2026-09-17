@@ -1,6 +1,6 @@
 # ACEDOOM
 
-DOOM (1993) running inside the Assetto Corsa EVO HUD as a UI app, loaded by the [ACE UI Mod Loader](https://github.com/dreasgrech/ACEUIModLoader) and built on its library.
+DOOM (1993) running inside the Assetto Corsa EVO HUD as a UI app, loaded by the [ACE UI App Loader](https://github.com/dreasgrech/ACEUIAppLoader) and built on its library.
 
 A showcase of how far a UI app can be pushed: a real game engine rendered through the game's own Cohtml UI, with no executable, no injected process and no game file replaced on disk. **This repository is GPL-2.0**, because the DOOM module it ships is.
 
@@ -9,14 +9,14 @@ A showcase of how far a UI app can be pushed: a real game engine rendered throug
 With the loader installed, this app is a folder and an empty marker file:
 
 ```
-Saved Games\ACE\mods\uiresources\ACEUIModLoaderApps\doom\
-Saved Games\ACE\Video\ACEUIModLoaderApps-doom.settingspreset
+Saved Games\ACE\mods\uiresources\ACEUIAppLoader\doom\
+Saved Games\ACE\Video\ACEUIAppLoader-doom.settingspreset
 ```
 
 For the sounds, one more file — a package that swaps DOOM's effects into the game's own UI sound bank, because a Cohtml page cannot play audio at all:
 
 ```
-Saved Games\ACE\mods\ACEUIModLoaderApps-doom.kspkg
+Saved Games\ACE\mods\ACEUIAppLoader-doom.kspkg
 ```
 
 It is optional. Without it DOOM is silent and everything else works. With it, the livery editor's paint and sticker sounds become DOOM's for as long as it is installed — see [`docs/sound.md`](docs/sound.md).
@@ -50,7 +50,7 @@ python tools/build_module.py              # wasm2js over doom.wasm -> doom/doomj
 python tools/build_wasm.py                # rebuild the module with the audio imports (needs wasi-sdk 24)
 python tools/extract_sounds.py            # the 55 shareware effects out of the WAD as WAV
 python tools/build_audio.py --install     # patch gui.bank, write the table override, pack, install
-python <ACEUIModLoader>/tools/install_app.py doom   # the loose half; needed after the line above
+python <ACEUIAppLoader>/tools/install_app.py doom   # the loose half; needed after the line above
 python -m unittest discover -s tests -v
 ```
 

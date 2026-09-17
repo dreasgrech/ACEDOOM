@@ -1,5 +1,5 @@
 /*
- * ACE DOOM -- stylesheet. Linked by the ACEUIModLoader after the stock CSS, so
+ * ACE DOOM -- stylesheet. Linked by the ACEUIAppLoader after the stock CSS, so
  * --font-family-main is the game's. Stock HUD widget look: black 75 % panel,
  * solid #1c1e1f header, flat buttons that turn #bd0000 on hover. No var()
  * fallbacks (Cohtml).

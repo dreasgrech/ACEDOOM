@@ -9,8 +9,8 @@
   #results { white-space: pre; }
 </style>
 <!-- shared test doubles (fake frame clock, in-memory localStorage, console capture) and the library, from the loader repo -->
-<script src="../../ACEUIModLoader/tests/lib/doubles.js"></script>
-<script src="../../ACEUIModLoader/tests/lib/lib.js"></script>
+<script src="../../ACEUIAppLoader/tests/lib/doubles.js"></script>
+<script src="../../ACEUIAppLoader/tests/lib/lib.js"></script>
 <link rel="stylesheet" type="text/css" href="../doom/doom.css">
 <script src="../doom/png.js"></script>
 <script src="../doom/saves.js"></script>
@@ -24,7 +24,7 @@
 (function () {
     const H = window.__harness;
     const t = H.t, eq = H.eq, ok = H.ok;
-    const me = ACEUIModLoader.app("doom");
+    const me = ACEUIAppLoader.app("doom");
     const extra = [];
     let frame = 1000;
     let finished = false;
@@ -105,7 +105,7 @@
 
     const root = document.createElement("div");
     root.id = "doom";
-    root.setAttribute(ACEUIModLoader.loader.MOUNTED_ATTR, "");
+    root.setAttribute(ACEUIAppLoader.loader.MOUNTED_ATTR, "");
     document.getElementById("center").appendChild(root);
     const state = ACEDoom.attach(root);
 
@@ -299,13 +299,13 @@
 
                     t("scale buttons step by 0.5 within 1..4 and persist", function () {
                         root.querySelector("[data-action=larger]").click(); eq(state.scale, 2.5); eq(root.style.fontSize, "2.5rem");
-                        eq(ACEUIModLoader.settings.get("doom", "scale"), 2.5, "persisted through the settings store");
+                        eq(ACEUIAppLoader.settings.get("doom", "scale"), 2.5, "persisted through the settings store");
                         ACEDoom.setScale(state, 10); eq(state.scale, 4, "clamped high"); ACEDoom.setScale(state, 0); eq(state.scale, 1, "clamped low");
 
                         /* the same value moved from the settings window has to reach the
                            screen: DOOM's own scaling stored the number and never listened,
                            so the slider there did nothing until the app restarted */
-                        ACEUIModLoader.settings.set("doom", "scale", 3);
+                        ACEUIAppLoader.settings.set("doom", "scale", 3);
                         eq(root.style.fontSize, "3rem", "the settings window moves the screen too");
                         eq(state.scale, 3, "and the state agrees");
                         ACEDoom.setScale(state, 2);
@@ -319,9 +319,9 @@
                         const hint = root.querySelector(".dm-hint");
 
                         ok(hint.textContent.indexOf("Insert show/hide") === 0, "the default to begin with");
-                        ACEUIModLoader.settings.set("doom", "toggleKey", "F7");
+                        ACEUIAppLoader.settings.set("doom", "toggleKey", "F7");
                         ok(hint.textContent.indexOf("F7 show/hide") === 0, "and the new key after: " + hint.textContent);
-                        ACEUIModLoader.settings.set("doom", "toggleKey", "Insert");
+                        ACEUIAppLoader.settings.set("doom", "toggleKey", "Insert");
                     });
 
                     t("saves: the codec round-trips exactly, squashes zero runs and refuses junk", function () {

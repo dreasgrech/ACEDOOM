@@ -8,8 +8,8 @@
   .absolutecenter { position: relative; width: 1600px; height: 900px; overflow: hidden; }
   #results { white-space: pre; }
 </style>
-<script src="../../ACEUIModLoader/tests/lib/doubles.js"></script>
-<script src="../../ACEUIModLoader/tests/lib/lib.js"></script>
+<script src="../../ACEUIAppLoader/tests/lib/doubles.js"></script>
+<script src="../../ACEUIAppLoader/tests/lib/lib.js"></script>
 <link rel="stylesheet" type="text/css" href="../doom/doom.css">
 <script src="../doom/png.js"></script>
 <script src="../doom/saves.js"></script>
@@ -52,7 +52,7 @@
 
     const root = document.createElement("div");
     root.id = "doom";
-    root.setAttribute(ACEUIModLoader.loader.MOUNTED_ATTR, "");
+    root.setAttribute(ACEUIAppLoader.loader.MOUNTED_ATTR, "");
     document.getElementById("center").appendChild(root);
     const state = ACEDoom.attach(root);
 

@@ -1,4 +1,4 @@
-"""The shared ACEUIModLoader test kit (appkit.py in the loader repo) plus this app's own contract."""
+"""The shared ACEUIAppLoader test kit (appkit.py in the loader repo) plus this app's own contract."""
 import json
 import os
 import re
@@ -6,7 +6,7 @@ import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOADER = os.environ.get("ACE_LOADER_DIR") or os.path.join(os.path.dirname(ROOT), "ACEUIModLoader")
+LOADER = os.environ.get("ACE_LOADER_DIR") or os.path.join(os.path.dirname(ROOT), "ACEUIAppLoader")
 sys.path.insert(0, os.path.join(LOADER, "tools"))
 
 from appkit import AppTests  # noqa: E402
@@ -124,7 +124,7 @@ class DoomContractTests(unittest.TestCase):
         self.assertIn("return Math.floor(doom.clockMs);", clock, "low 32 bits of the legalised i64 import")
         self.assertIn("if (doom.polls > POLL_LIMIT) {", clock, "busy-waits inside one tick must end")
         self.assertIn("state.doom.polls = 0;", self.js)
-        self.assertIn("if (!state.open || ACEUIModLoader.hudHidden() || doom.phase !== PHASE.running) {", self.js)
+        self.assertIn("if (!state.open || ACEUIAppLoader.hudHidden() || doom.phase !== PHASE.running) {", self.js)
         self.assertIn("doom.clockMs += step;", self.js)
         self.assertIsNone(re.search(r"setInterval|setTimeout", self.js), "the shared frame loop drives the game")
 
