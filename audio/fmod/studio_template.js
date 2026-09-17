@@ -12,7 +12,10 @@
  *                                    event:/doom/, assigned to the master bank, then build
  *
  * The build lands in <project>/Build/sfx/ (platform "Desktop", sub-directory "sfx") as
- * master_bank.bank + master_bank.strings.bank; tools/install_bank.py copies them into
+ * master_bank.bank + master_bank.strings.bank, which tools/patch_bank.py reads samples
+ * out of. (tools/install_bank.py copies a bank into the mods folder; it predates the
+ * finding that the game never loads a mod's own bank for UI sounds, and is not part of
+ * this pipeline.) The old path continued:
  * Saved Games\ACE\mods\content\sfx\acedoom\. Kunos's warning applies: never touch the mixer page.
  */
 (function () {
@@ -103,6 +106,10 @@
                 var slot = SLOTS[i];
                 var path = "event:/" + slot.event;
 
+                // An event is kept once it exists, so a changed source file never reaches the bank.
+                // Deleting and rebuilding would be the obvious answer, but ManagedObject.delete is not
+                // in this Studio's scripting API (2.03.13: "TypeError: not a function"). A padded sound
+                // is therefore given its own name by build_audio.py, so it arrives here as a new event.
                 if (eventAt(path)) { report.push("kept " + path); continue; }
 
                 var asset = null;
@@ -127,7 +134,7 @@
             studio.project.save();
             for (var r = 0; r < report.length; r++) { log(report[r]); }
             studio.project.build();
-            alert(report.join("\n") + "\n\nBuilding. When it finishes, run in a terminal:\n  python tools/install_bank.py\n(from the ACEDOOM repo; it copies Build/sfx/master_bank*.bank into Saved Games\\ACE\\mods\\content\\sfx\\acedoom\\)");
+            alert(report.join("\n") + "\n\nBuilding. When it finishes, run in a terminal, from the ACEDOOM repo:\n  python tools/build_audio.py --install\n  python <ACEUIModLoader>/tools/install_mod.py doom\n(the first swaps these samples into the game's gui.bank and packs it; the second installs the loose half. Both are needed: they are two routes out of one sounds.json.)");
         }
     });
 

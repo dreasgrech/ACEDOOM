@@ -175,5 +175,79 @@ class BankPatchTests(unittest.TestCase):
             self.pb.patch(self.stock, bytes(pcm), {"click.6": "confirm"})
 
 
+class SoundPreparationTests(unittest.TestCase):
+    """tools/build_audio.py: the rules that each cost a launch on 2026-09-17."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import build_audio
+        cls.ba = build_audio
+
+    def slot(self, **extra):
+        base = {"gui": "GUI_WARNING", "stockSample": "load", "sfx": "itemup"}
+        base.update(extra)
+        return base
+
+    def test_an_unprepared_sound_keeps_its_own_name(self):
+        self.assertEqual(self.ba.bank_sample(self.slot()), "itemup")
+
+    def test_a_prepared_sound_is_named_after_its_content(self):
+        """FMOD Studio keeps any event that already exists and its scripting API has no
+        delete, so a prepared sound whose name never changes can never be updated: the
+        padded blip was imported once and then served stale while the file changed under
+        it. Different preparation must mean a different name, or that returns."""
+        padded = self.ba.bank_sample(self.slot(padTo=0.55))
+        louder = self.ba.bank_sample(self.slot(padTo=0.55, normalize=0.9))
+        longer = self.ba.bank_sample(self.slot(padTo=0.80, normalize=0.9))
+        self.assertTrue(padded.startswith("itemup_"), padded)
+        self.assertNotEqual(padded, louder, "a normalised sound is not the padded one")
+        self.assertNotEqual(louder, longer, "a different length is a different sound")
+        self.assertEqual(louder, self.ba.bank_sample(self.slot(padTo=0.55, normalize=0.9)), "stable")
+
+    def test_normalising_reads_the_44k_source_and_padding_alone_does_not(self):
+        """Gain on an 11 kHz 8-bit sample amplifies its quantisation noise with it."""
+        self.assertTrue(self.ba.source_wav(self.slot()).replace("\\", "/").endswith("/sfx/itemup.wav"))
+        self.assertTrue(self.ba.source_wav(self.slot(normalize=0.9)).replace("\\", "/").endswith("/sfx44/itemup.wav"))
+
+    def test_preparing_reaches_the_asked_for_peak_and_length(self):
+        """DOOM's blip peaks at 15% of full scale where its gunfire peaks at 100%, and at
+        its own level it is inaudible in game -- at 0.202 s and at 0.550 s alike. Level,
+        not length, was the reason; this pins the fix."""
+        import struct
+        import wave
+
+        dest = self.ba.prepare_wav(self.slot(padTo=0.55, normalize=0.9))
+        with wave.open(dest, "rb") as w:
+            frames, width, rate = w.getnframes(), w.getsampwidth(), w.getframerate()
+            raw = w.readframes(frames)
+        self.assertEqual(width, 2, "the 44.1 kHz source is 16-bit")
+        values = struct.unpack("<%dh" % (len(raw) // 2), raw)
+        self.assertAlmostEqual(max(abs(v) for v in values) / 32767.0, 0.9, delta=0.01)
+        self.assertAlmostEqual(frames / float(rate), 0.55, delta=0.01)
+        self.assertEqual(values[-1], 0, "padded with silence")
+
+
+class SampleLengthTests(unittest.TestCase):
+    """tools/patch_bank.py: every sample carries its own rate."""
+
+    def test_length_uses_the_samples_own_frequency_not_the_banks(self):
+        """DOOM's effects are 11 kHz and its music 44.1 kHz. Reporting both at one rate
+        understated the effects more than four-fold, turning a 0.202 s sample into
+        '0.05 s' -- which invented a length problem that was never there and cost two
+        rebuilds before anyone measured amplitude instead."""
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import patch_bank
+
+        class Fake:
+            def __init__(self, code, count):
+                self.frequency_code, self.samples = code, count
+
+        self.assertAlmostEqual(patch_bank.seconds(Fake(2, 2222)), 0.202, places=3)   # 11 kHz
+        self.assertAlmostEqual(patch_bank.seconds(Fake(8, 22050)), 0.500, places=3)  # 44.1 kHz
+        self.assertNotAlmostEqual(patch_bank.seconds(Fake(2, 2222)),
+                                  2222 / 44100.0, places=3, msg="not the bank-wide rate")
+
+
 if __name__ == "__main__":
     unittest.main()

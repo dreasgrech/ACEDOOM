@@ -22,6 +22,7 @@ the bank.
           installed; see pack_kspkg.py --dups.
 """
 import glob
+import hashlib
 import json
 import os
 import shutil
@@ -38,6 +39,7 @@ AUDIOMAP = os.path.join(ROOT, "doom", "audiomap.js")
 STUDIO_TEMPLATE = os.path.join(ROOT, "audio", "fmod", "studio_template.js")
 PROJECT = os.path.join(ROOT, "audio", "fmod", "project")
 STUDIO_SCRIPT = os.path.join(PROJECT, "Scripts", "acedoom.js")
+PADDED_DIR = os.path.join(ROOT, "audio", "sfx_padded")   # sources lengthened by padTo
 OUR_BANK_DIRS = (os.path.join(ROOT, "audio", "acevo_content"), os.path.join(PROJECT, "Build"))
 MUSIC_DIR = os.path.join(os.path.dirname(ROOT), "console-doom", "music")
 PACKAGE_DIR = os.path.join(ROOT, "build", "package")
@@ -117,14 +119,94 @@ def write_audiomap(config):
     return len(sfx), len(music)
 
 
+def source_wav(slot):
+    """The WAV a slot is built from: the 44.1 kHz 16-bit copy when it will be amplified,
+    because gain on an 11 kHz 8-bit sample amplifies its quantisation noise with it."""
+    folder = "sfx44" if slot.get("normalize") else "sfx"
+    return os.path.join(ROOT, "audio", folder, slot["sfx"] + ".wav")
+
+
+def bank_sample(slot):
+    """
+    The name this slot's sound carries in OUR bank.
+
+    A prepared sound is named after its own content: `<sfx>_<hash of the source and the
+    preparation>`. That is not tidiness. The Studio script keeps any event that already
+    exists and cannot delete one (ManagedObject.delete is not in 2.03.13's API), so a
+    sound whose name stays the same can never be updated -- the padded blip was imported
+    once and then silently kept at its old, too-quiet version. A name that changes when
+    the audio changes makes every revision arrive as a new event, which the script does
+    handle. Old events pile up in the project, unused and harmless.
+    """
+    if not (slot.get("padTo") or slot.get("normalize")):
+        return slot["sfx"]
+    key = repr((round(slot.get("padTo") or 0, 4), round(slot.get("normalize") or 0, 4))).encode()
+    with open(source_wav(slot), "rb") as f:
+        key += f.read()
+    return slot["sfx"] + "_" + hashlib.sha1(key).hexdigest()[:6]
+
+
+def prepare_wav(slot):
+    """
+    The slot's source, amplified and padded as it asks, written into audio/sfx_padded.
+
+    `normalize` is a peak as a fraction of full scale. DOOM's item blip peaks at 15% of
+    full scale where its gunfire peaks at 100%, and in game that difference is the whole
+    story: it was inaudible under gunfire and music at its own level, at both 0.202 s and
+    0.550 s. `padTo` appends silence; the fill is the format's zero, which for unsigned
+    8-bit is 0x80 rather than 0, or it would click.
+    """
+    import array
+    import wave
+
+    source = source_wav(slot)
+    with wave.open(source, "rb") as src:
+        params = src.getparams()
+        raw = src.readframes(params.nframes)
+
+    if params.sampwidth == 1:
+        values = array.array("h", [b - 128 for b in raw])
+        limit, quiet = 127, 0x80
+    else:
+        values = array.array("h", raw)
+        limit, quiet = 32767, 0
+
+    if slot.get("normalize"):
+        peak = max(abs(v) for v in values) or 1
+        factor = slot["normalize"] * limit / float(peak)
+        values = array.array("h", [max(-limit, min(limit, int(round(v * factor)))) for v in values])
+
+    want = int((slot.get("padTo") or 0) * params.framerate)
+    pad = max(0, want - params.nframes)
+    if params.sampwidth == 1:
+        out = bytes(v + 128 for v in values) + bytes([quiet]) * (pad * params.nchannels)
+    else:
+        out = values.tobytes() + bytes(pad * params.nchannels * 2)
+
+    os.makedirs(PADDED_DIR, exist_ok=True)
+    dest = os.path.join(PADDED_DIR, bank_sample(slot) + ".wav")
+    with wave.open(dest, "wb") as w:
+        w.setparams(params)
+        w.writeframes(out)
+    print(f"  prepared {os.path.basename(source)} -> {os.path.basename(dest)}: "
+          f"{params.nframes / params.framerate:.3f}s"
+          + (f" x{slot['normalize'] * limit / float(max(abs(v) for v in values) or 1):.1f} gain" if False else "")
+          + (f", normalised to {int(slot['normalize'] * 100)}% peak" if slot.get("normalize") else "")
+          + (f", padded to {want / params.framerate:.3f}s" if pad else ""))
+    return dest
+
+
 def write_studio_script(config):
     """The FMOD Studio menu script with the import list baked in (Studio scripts cannot read files)."""
     entries = []
     for slot in config["slots"]:
         if not slot.get("sfx"):
             continue
-        file = os.path.join(ROOT, "audio", "sfx", slot["sfx"] + ".wav")
-        entries.append({"name": slot["sfx"], "event": "doom/" + slot["sfx"], "file": file.replace("\\", "/"), "music": False})
+        file = source_wav(slot)
+        if slot.get("padTo") or slot.get("normalize"):
+            file = prepare_wav(slot)
+        entries.append({"name": bank_sample(slot), "event": "doom/" + bank_sample(slot),
+                        "file": file.replace("\\", "/"), "music": False})
     for track in config.get("music", []):
         file = os.path.join(MUSIC_DIR, "d_" + track["music"] + ".ogg")
         entries.append({"name": "music_" + track["music"], "event": "doom/music_" + track["music"],
@@ -146,17 +228,22 @@ def our_bank():
 
 
 def write_patched_bank(config):
-    mapping = {s["stockSample"]: (s["sfx"] if s.get("sfx") else "stock:" + s["copyStock"]) for s in config["slots"] if s.get("stockSample")}
+    mapping = {s["stockSample"]: (bank_sample(s) if s.get("sfx") else "stock:" + s["copyStock"]) for s in config["slots"] if s.get("stockSample")}
     # alsoSamples: the same DOOM sound put into every sample a param might turn out to play.
     # Which stock sample a gui_navigation param plays can only be learned by ear, and a wrong
     # guess is a launch. Filling all the candidates makes the slot right whichever it is, at
     # the price of those stock sounds being DOOM's if the game ever plays them itself.
     for slot in config["slots"]:
         for extra in slot.get("alsoSamples", []):
-            mapping[extra] = slot["sfx"]
+            mapping[extra] = bank_sample(slot)
     # musicSwaps replace a whole music track in gui.bank with one of our bank's music samples (raw name)
     for m in config.get("musicSwaps", []):
         mapping[m["stockSample"]] = m["bankSample"]
+    # probes: a raw sample -> our sample swap that is not a slot. Which stock sample a
+    # gui_navigation param plays is only knowable by ear, so putting a DIFFERENT and
+    # unmistakable DOOM sound in each candidate turns one launch into a definite answer.
+    for probe in config.get("probes", []):
+        mapping[probe["stockSample"]] = probe["bankSample"]
     path = our_bank()
     with open(path, "rb") as f:
         ours = f.read()

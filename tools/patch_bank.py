@@ -128,6 +128,23 @@ def split_bank(bank):
     return snd_at, fsb_at
 
 
+# FSB5 frequency codes (the 4 bits at header bits 1-4), as Hz.
+FREQUENCIES = {0: 4000, 1: 8000, 2: 11000, 3: 11025, 4: 16000, 5: 22050, 6: 24000,
+               7: 32000, 8: 44100, 9: 48000, 10: 96000}
+
+
+def seconds(sample):
+    """
+    A sample's real length.
+
+    Every sample carries its own rate: DOOM's effects are 11 kHz and its music 44.1 kHz,
+    so assuming one rate for the bank understates the effects four-fold. This reported
+    0.202 s samples as 0.05 s on 2026-09-17, which is exactly the range where a slot
+    swallows a sound, and sent an afternoon after the wrong explanation.
+    """
+    return sample.samples / float(FREQUENCIES.get(sample.frequency_code, 44100))
+
+
 def patch(gui_bank, our_bank, mapping):
     """gui.bank with mapping's samples replaced (by name) from our bank; also returns a report."""
     snd_at, fsb_at = split_bank(gui_bank)
@@ -153,7 +170,7 @@ def patch(gui_bank, our_bank, mapping):
                 old = samples[k]
                 new = by_name[source]
                 samples[k] = Sample(old.name, new.header, new.metas, new.data, new.frequency_code, new.channels, new.samples)
-                report.append(f"  #{k:2} {old.name[:40]:<40} {old.samples / 44100:6.2f} s -> {source} {new.samples / 44100:6.2f} s")
+                report.append(f"  #{k:2} {old.name[:40]:<40} {seconds(old):6.2f} s -> {source} {seconds(new):6.2f} s")
     fsb = build_fsb5(fields, samples)
     prefix = bytearray(gui_bank[:fsb_at])              # everything before the FSB5, SND header included, gap zeros included
     body_start = snd_at + 8

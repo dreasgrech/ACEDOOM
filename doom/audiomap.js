@@ -23,6 +23,8 @@ const ACEDoomAudioMap = (function () {
             25: "GUI_MONEY_LOSS",
             26: "GUI_MONEY_LOSS",
             27: "GUI_MONEY_LOSS",
+            32: "GUI_WARNING",
+            33: "GUI_WARNING",
             34: "GUI_MONEY_LOSS",
             57: "GUI_MONEY_LOSS",
             58: "GUI_MONEY_LOSS",

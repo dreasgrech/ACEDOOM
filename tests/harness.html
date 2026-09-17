@@ -221,9 +221,15 @@
                 const audio = ACEDoom.imports(state).audio;
                 const requestsBefore = state.stats.requests;
                 nextFrame();                                   // resets the per-frame cap
-                audio.onSoundStart(1, 100, 128);               // pistol -> GUI_PAINT_APPLY (its stock sample is swapped for the pistol)
+                // The type comes from audiomap.js rather than being repeated here: the effects
+                // moved off gui_garage onto gui_navigation in 2026-09 and this case went stale,
+                // asserting the old type against the generated map. What is worth pinning is the
+                // command's shape and that the pistol is mapped at all -- not which slot it uses.
+                const pistolType = ACEDoomAudioMap.sfx[1];
+                ok(pistolType, "the pistol has a slot in audiomap.js");
+                audio.onSoundStart(1, 100, 128);
                 eq(calls.length, 1, "one request"); eq(calls[0][0], "OnUICommand"); eq(calls[0][1], "UIAudioRequestAudioEvent");
-                eq(JSON.stringify(calls[0][2]), JSON.stringify({ __Type: "UIAudioRequestAudioEvent", type: "GUI_PAINT_APPLY" }), "the stock command shape");
+                eq(JSON.stringify(calls[0][2]), JSON.stringify({ __Type: "UIAudioRequestAudioEvent", type: pistolType }), "the stock command shape");
                 audio.onSoundStart(10, 100, 128); eq(calls.length, 1, "the chainsaw has no slot");
                 audio.onSoundStart(1, ACEDoom.MIN_SOUND_VOLUME - 1, 128); eq(calls.length, 1, "too quiet");
                 for (let i = 0; i < 20; i += 1) { audio.onSoundStart(2, 100, 128); }
@@ -233,7 +239,7 @@
                 calls.length = 0;
                 audio.onMusicStart(30, 1); eq(state.music, null, "an unmapped track (intro) starts nothing");
                 audio.onMusicStart(1, 1);                      // e1m1 -> GUI_PART_APPLY (audiomap.js)
-                eq(calls.length, 1, "music requested at once"); eq(calls[0][2].type, "GUI_PART_APPLY"); ok(state.music, "music state");
+                eq(calls.length, 1, "music requested at once"); eq(calls[0][2].type, ACEDoomAudioMap.music[1].gui, "music uses the slot audiomap.js names"); ok(state.music, "music state");
                 audio.onMusicStart(5, 1); audio.onMusicStop(); audio.onMusicStart(30, 1);
                 eq(calls.length, 1, "DOOM flipping tracks and stopping does not restart our music");
                 state.music.lengthMs = 16 * 40;                // pretend a 640 ms track (the restart margin is 250 ms)

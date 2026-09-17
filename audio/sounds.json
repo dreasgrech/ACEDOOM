@@ -48,7 +48,7 @@
     },
     {
       "gui": "GUI_SWITCH_OFF",
-      "stockSample": "199746459-money-prize",
+      "stockSample": "281953171-uimvmt_ui-card-menu-shop-item-",
       "sfx": "doropn",
       "also": [
         "dorcls",
@@ -60,11 +60,7 @@
         "pstart",
         "pstop"
       ],
-      "_role": "doors, switches, lifts; param 6's stock sample was money-prize by guess and proved wrong, so every 1.3-1.6 s candidate carries this sound",
-      "alsoSamples": [
-        "281953171-uimvmt_ui-card-menu-shop-item-",
-        "load"
-      ]
+      "_role": "doors, switches, lifts"
     },
     {
       "gui": "GUI_SWITCH_ON",
@@ -73,10 +69,18 @@
       "also": [
         "rxplod"
       ],
-      "_role": "explosions (barrels and rockets only; imp fireball impacts stay silent, they misled as explosions); the long-sample candidate carries it too, in case param 5 is the fanfare rather than the whoosh",
-      "alsoSamples": [
-        "125068160-level-e"
-      ]
+      "_role": "explosions (barrels and rockets only; imp fireball impacts stay silent, they misled as explosions)"
+    },
+    {
+      "gui": "GUI_WARNING",
+      "stockSample": "load",
+      "sfx": "itemup",
+      "also": [
+        "wpnup"
+      ],
+      "_role": "pickups. GUI_WARNING is param 1 and needs no claim -- the stock table already maps it -- so this costs the game's warning sound and nothing else. itemup is DOOM's blip for health, armour and ammo, and it peaks at 15% of full scale where the gunfire peaks at 100%: at its own level it was inaudible in game at 0.202 s AND at 0.550 s, so length was never the problem. normalize brings it to 90% peak, from the 44.1 kHz 16-bit source so the gain does not amplify 8-bit quantisation noise",
+      "padTo": 0.55,
+      "normalize": 0.9
     }
   ],
   "music": [
@@ -134,7 +138,7 @@
     }
   ],
   "_musicExperiment": "EXPERIMENT: every UI music track is DOOM E1M1, so any menu/gameplay music is unmistakable and GUI_MUSIC_MENU/GAMEPLAY/END are deterministic. If it works, the real version uses different DOOM tracks (E1M1-E1M9) for variety.",
-  "_note": "4 effect groups + music. Four slots because gui_navigation exposes params 5-8 and no more; the shotgun shares the weapons slot and pain shares deaths. The pickup blip is still dropped. GUI_WARNING (param 1) is a fifth slot we could borrow to unmerge one pair, at the price of one stock menu sound -- its stock sample has never been identified.",
+  "_note": "5 effect groups + music. gui_navigation stops at param 8: params 5-8 are claimed through the table override, and GUI_WARNING (param 1) is borrowed from the stock five. The shotgun still shares the weapons slot and pain shares deaths; params 0, 2, 3 and 4 are four more stock clicks that could be borrowed to unmerge them, one menu sound each.",
   "claims": [
     {
       "gui": "GUI_SWITCH_ON",
@@ -146,7 +150,7 @@
       "gui": "GUI_SWITCH_OFF",
       "event": "gui/gui_navigation",
       "param": 6,
-      "_plays": "199746459-money-prize, 1.49 s"
+      "_plays": "281953171-uimvmt_ui-card-menu-shop-item-, 1.33 s (identified in game, not guessed)"
     },
     {
       "gui": "GUI_MONEY_GAIN",

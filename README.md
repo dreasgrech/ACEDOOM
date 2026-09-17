@@ -49,11 +49,14 @@ Only needed to change the module or the sounds; the shipped files are committed.
 python tools/build_module.py              # wasm2js over doom.wasm -> doom/doomjs.js  (needs binaryen)
 python tools/build_wasm.py                # rebuild the module with the audio imports (needs wasi-sdk 24)
 python tools/extract_sounds.py            # the 55 shareware effects out of the WAD as WAV
-python tools/build_audio.py --install     # patch gui.bank, pack it, install it
+python tools/build_audio.py --install     # patch gui.bank, write the table override, pack, install
+python <ACEUIModLoader>/tools/install_mod.py doom   # the loose half; needed after the line above
 python -m unittest discover -s tests -v
 ```
 
-The FMOD Studio project is Kunos' SDK template and is **not** committed (`.gitignore` excludes `audio/fmod/project/`); copy it in from the SDK to rebuild the bank.
+**The sound path ships in two halves and both are needed.** `gui.bank` and `system/gui_events.table` are packed into the mod package; `doom/audiomap.js` is a loose mod file. They are generated from the same `audio/sounds.json`, and installing one without the other is silent and reads exactly like a sound bug — with a stale map the host asks for the event types it used to use, whose samples are stock again, so DOOM's pistol comes out as Kunos' spray gun. [`docs/sound.md`](docs/sound.md) is the full account of how the audio reaches the game and what it cost to find out.
+
+The FMOD Studio project is Kunos' SDK template and is **not** committed (`.gitignore` excludes `audio/fmod/project/`); copy it in from the SDK to rebuild the bank. Changing a sound means running **ACEDOOM ▸ 2. Add sounds and build** in Studio first, then the two commands above.
 
 ## Layout
 
@@ -61,13 +64,14 @@ The FMOD Studio project is Kunos' SDK template and is **not** committed (`.gitig
 doom/                  the shipped mod: mod.json, doom.js (the host), png.js, saves.js,
                        audiomap.js, doom.css, and doomjs.js (generated, 7 MB)
 third_party/doom.wasm  the module as released upstream (4.4 MB); not shipped -- the game cannot run it
-audio/sounds.json      which DOOM sound goes into which stock sample slot
+audio/sounds.json      which DOOM sound goes into which stock sample slot, and which event types carry them
 tools/
   build_module.py      wasm2js + rewrite into the classic script the game can run
   build_wasm.py        rebuilds the module with DOOM's audio calls exported
   extract_sounds.py    pulls the DS* lumps out of the shareware WAD
   patch_bank.py        swaps samples inside the game's gui.bank, keeping every event intact
   build_audio.py       generates the Studio script and audiomap.js, packs the bank package
+  build_table.py       overrides system/gui_events.table, to reach FMOD events no GUI type maps
 tests/
   test_mod.py          the loader's shared kit plus this mod's contract
   harness.html         the real module in a headless browser: boot, 40 frames, a frame
