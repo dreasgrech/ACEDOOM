@@ -13,7 +13,10 @@ build_audio.py - everything the audio path derives from audio/sounds.json.
                                      the loader's pack_kspkg.py (named to list after the loader).
 
 Usage:
-    python tools/build_audio.py [--pack] [--install] [--no-bank] [--dups=N]
+    python tools/build_audio.py [--pack] [--install] [--no-bank] [--release] [--dups=N]
+
+--release plans the padding for a stock install rather than this machine's mods folder.
+          Anything other people will download has to be built this way.
 
 --no-bank skips step 3 (before Studio has built our bank). Steps 1 and 2 never need
 the bank.
@@ -23,6 +26,8 @@ the bank.
 """
 import glob
 import hashlib
+import shutil as _shutil
+import tempfile
 import json
 import os
 import shutil
@@ -256,7 +261,7 @@ def write_patched_bank(config):
     return path, len(out), report
 
 
-KNOWN_FLAGS = {"--pack", "--install", "--no-bank"}
+KNOWN_FLAGS = {"--pack", "--install", "--no-bank", "--release"}
 
 
 def write_table(config):
@@ -315,6 +320,26 @@ def main(argv):
         # is added first, so its record starts ahead of ours). Extra records for the same
         # hash give it several places in that equal run. See pack_kspkg.py --dups.
         cmd = [sys.executable, os.path.join(LOADER_TOOLS, "pack_kspkg.py"), PACKAGE_DIR, out]
+        # A normal build plans its padding against THIS machine's mods folder, so it is tuned
+        # to keep whatever happens to be installed here working. A player has a different set,
+        # usually none -- and on 2026-09-17 a package built this way lost BOTH its overrides
+        # with only the loader alongside, which is the commonest setup there is. A package
+        # other people will install has to be planned for a stock install.
+        stock = None
+        if "--release" in argv:
+            # A stock install of THIS package is not an empty folder: DOOM cannot run without
+            # the loader, so the loader is always alongside it. Planning against nothing at all
+            # produced a package that won on its own and lost both overrides the moment the
+            # loader was there (2026-09-17) -- which is every real installation.
+            loader_pkg = os.path.join(os.path.dirname(LOADER_TOOLS), "dist", "ACEUIModLoader.kspkg")
+            if not os.path.isfile(loader_pkg):
+                raise SystemExit("--release needs the loader's release package built first:\n  "
+                                 + loader_pkg + "\nBuild it with --release there, then come back.")
+            stock = tempfile.mkdtemp(prefix="acedoom-release-")
+            _shutil.copyfile(loader_pkg, os.path.join(stock, os.path.basename(loader_pkg)))
+            cmd.append(f"--mods-dir={stock}")
+            print("release build: padding planned for a stock install -- the loader alongside, "
+                  "nothing else", flush=True)
         if int(asked) > 1:
             # Both overrides have to win, not either: the bank without the table plays DOOM's
             # sounds on types nothing fires, and the table without the bank fires types whose
@@ -324,7 +349,11 @@ def main(argv):
                 cmd.append(f"--dup={TABLE_PATH}")
         if "--install" in argv:
             cmd.append("--install")
-        subprocess.run(cmd, check=True)
+        try:
+            subprocess.run(cmd, check=True)
+        finally:
+            if stock:
+                _shutil.rmtree(stock, ignore_errors=True)
         if "--install" in argv:
             # audiomap.js and gui.bank are two halves of the same sounds.json, and they ship
             # by different routes: the bank is packed, the map is a loose mod file. Installing
