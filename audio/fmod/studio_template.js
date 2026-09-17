@@ -13,9 +13,9 @@
  *
  * The build lands in <project>/Build/sfx/ (platform "Desktop", sub-directory "sfx") as
  * master_bank.bank + master_bank.strings.bank, which tools/patch_bank.py reads samples
- * out of. (tools/install_bank.py copies a bank into the mods folder; it predates the
- * finding that the game never loads a mod's own bank for UI sounds, and is not part of
- * this pipeline.) The old path continued:
+ * out of. Our bank is never shipped: the game builds its UI events once at startup from
+ * five fixed banks and never loads a mod's, which is why the samples are swapped inside
+ * Kunos' gui.bank instead. The old path continued:
  * Saved Games\ACE\mods\content\sfx\acedoom\. Kunos's warning applies: never touch the mixer page.
  */
 (function () {
