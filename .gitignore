@@ -10,6 +10,10 @@ __pycache__/
 build/
 dist/
 audio/sfx/
+audio/sfx44/
+# and the prepared copies build_audio.py makes from them: same id Software lumps,
+# normalised and padded. Regenerated from the player's own WAD, never shipped.
+audio/sfx_padded/
 
 # FMOD Studio project: Kunos's SDK modding template, copied in to rebuild the bank; not ours to
 # redistribute. Only our own files under audio/ are committed (sounds.json, fmod/studio_template.js).

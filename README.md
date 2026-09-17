@@ -92,11 +92,16 @@ docs/                  see below
 
 ## Licences and attributions
 
-The host (`doom.js`), the PNG encoder (`png.js`), the CSS and every tool in `tools/` are ours. Everything else, with its source:
+Copyright (C) 2026 Andreas Grech. **This repository is GPL-2.0** -- the full text is in
+[`LICENSE`](LICENSE). It is not a free choice: the DOOM module this ships is GPL-2.0, and
+everything distributed with it goes the same way.
 
-- **DOOM engine.** `third_party/doom.wasm` and the generated `doom/doomjs.js` are GPL-2.0. They are [jacobenget/doom.wasm](https://github.com/jacobenget/doom.wasm) v0.1.0 (which vendors [ozkl/doomgeneric](https://github.com/ozkl/doomgeneric), over id Software's DOOM source, GPL-2.0). Because the module is GPL-2.0, this repo carries that licence and the corresponding source (the module input and the build tools below).
+The host (`doom.js`), the PNG encoder (`png.js`), the CSS and every tool in `tools/` are ours,
+and are GPL-2.0 as part of this work. Everything else, with its source:
+
+- **DOOM engine.** `third_party/doom.wasm` and the generated `doom/doomjs.js` are GPL-2.0. They are [jacobenget/doom.wasm](https://github.com/jacobenget/doom.wasm) v0.1.0 (which vendors [ozkl/doomgeneric](https://github.com/ozkl/doomgeneric), over id Software's DOOM source, GPL-2.0). Because the module is GPL-2.0, so is this repository. The module's **corresponding source is not vendored here** -- it is at that pinned upstream release, and [`third_party/README.md`](third_party/README.md) says what that means for anyone redistributing this.
 - **DOOM shareware WAD** (`DOOM1.WAD`), embedded in the module: the levels, sprites, sound effects and music. Copyright id Software, Inc., freely distributable as the shareware data. jacobenget's build fetches it from `https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad`.
-- **Sound effects**: the `DS*` lumps `tools/extract_sounds.py` pulls from that shareware WAD. id Software.
+- **Sound effects**: the `DS*` lumps `tools/extract_sounds.py` pulls from that shareware WAD. id Software. Extracted lumps are not the shareware archive, so they are never committed: `audio/sfx/`, `audio/sfx44/` and `audio/sfx_padded/` are all gitignored and regenerate from the player's own WAD.
 - **Music** (E1M1 etc.): the OGG renders from [farrelke/console-doom](https://github.com/farrelke/console-doom) (ISC wrapper). The compositions are the DOOM soundtrack by Bobby Prince, copyright id Software; the shareware tracks are the freely distributable ones.
 - **Build tools** (needed only to rebuild, not shipped): [WASI SDK 24](https://github.com/WebAssembly/wasi-sdk) (clang 18.1.2, Apache-2.0 with LLVM exceptions) and [Binaryen version_123](https://github.com/WebAssembly/binaryen) (`wasm2js`, Apache-2.0).
 - **FMOD** Studio 2.03.13 and FMOD Engine, Firelight Technologies Pty Ltd, `https://www.fmod.com/download`. Proprietary FMOD EULA; used to author the bank; not redistributed here.
