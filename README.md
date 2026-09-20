@@ -2,6 +2,10 @@
 
 DOOM (1993) running inside the Assetto Corsa EVO HUD as a UI app, loaded by the [ACE UI App Loader](https://github.com/dreasgrech/ACEUIAppLoader) and built on its library.
 
+<p align="center">
+<img width="486" height="322" alt="doom_cmp_Q_486_8s_96" src="https://github.com/user-attachments/assets/6bc8cc0a-3882-4274-850c-0fd0b5e756d7" />
+</p>
+
 A showcase of how far a UI app can be pushed: a real game engine rendered through the game's own Cohtml UI, with no executable, no injected process and no game file replaced on disk. **This repository is GPL-2.0**, because the DOOM module it ships is.
 
 ## Installing
