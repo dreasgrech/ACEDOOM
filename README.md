@@ -165,7 +165,7 @@ project is Kunos' SDK template and is not committed. The docs have the full acco
 
 ## Licence and attributions
 
-Copyright (C) 2026 Andreas Grech. **This repository is GPL-2.0** ([`LICENSE`](LICENSE)): the
+**This repository is GPL-2.0** ([`LICENSE`](LICENSE)): the
 DOOM module it ships is GPL-2.0, so everything distributed with it is too. The host, the PNG
 encoder, the CSS and the tools are ours under the same licence. Everything else:
 
