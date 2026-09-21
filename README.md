@@ -51,9 +51,10 @@ Nothing to run.
 </table>
 
 **Sound is optional.** A UI page cannot play audio, so DOOM's effects come through the game's
-own UI sound bank instead. For that, also download **`ACEUIAppLoader-doom.kspkg`** from the
-release and put it in `Saved Games\ACE\mods`. While it is installed, the livery editor's paint
-and sticker sounds are DOOM's too. Without it, DOOM is silent and everything else works.
+own UI sound bank instead. For that, also download **`ACEDOOM-sound-….zip`** from the same
+release and install it the same way: drag its `mods` folder into that window, merge. While it
+is installed, the livery editor's paint and sticker sounds are DOOM's too. Without it, DOOM is
+silent and everything else works.
 
 In the car, press <kbd>Insert</kbd>. DOOM is also listed in the app drawer (mouse to the right
 edge of the screen) with its own switch and an **OPTIONS** button.
@@ -100,8 +101,9 @@ clear them.
 <details>
 <summary><b>No sound, or the wrong sounds</b></summary><br>
 
-The sound package is a separate download; without it DOOM is silent. If the pistol sounds like
-a spray gun, the package and the app are from different releases: install both from the same one.
+The sound zip is a separate download; without it DOOM is silent. If the pistol sounds like a
+spray gun, the sound zip and the app zip are from different releases: install both from the
+same one.
 
 </details>
 
@@ -134,7 +136,7 @@ doom/          the app: doom.js (the host), png.js, saves.js, audiomap.js, doom.
                and doomjs.js (generated from third_party/doom.wasm, 7 MB)
 audio/         sounds.json: which DOOM sound replaces which stock sample
 tools/         build_module.py, build_wasm.py, extract_sounds.py, build_audio.py,
-               patch_bank.py, build_table.py
+               patch_bank.py, build_table.py, release_sound.py
 tests/         the loader's shared kit, this app's contract, and the real module in a
                headless browser
 dev/           preview.html runs the app outside the game; saveprobe.html produces a real save
@@ -145,7 +147,9 @@ python tools/build_module.py              # wasm2js over doom.wasm -> doom/doomj
 python tools/build_wasm.py                # rebuild the module with the audio imports (needs wasi-sdk 24)
 python tools/extract_sounds.py            # the shareware effects out of the WAD
 python tools/build_audio.py --install     # patch gui.bank, pack and install the sound package
+python tools/release_sound.py             # wrap that package as dist/ACEDOOM-sound-<version>.zip
 python ..\ACEUIAppLoader\tools\install_app.py doom
+python ..\ACEUIAppLoader\tools\release_app.py doom   # the app zip, dist/ACEDOOM-<version>.zip
 python -m unittest discover -s tests -v
 ```
 
