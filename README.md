@@ -81,6 +81,10 @@ edge of the screen) with its own switch and an **OPTIONS** button.
 The header drags the panel; its `-` / `+` buttons scale it and `x` hides it. Save Game and
 Load Game work from DOOM's own menu.
 
+<p align="center">
+<img width="2560" height="1440" alt="207B17~1" src="https://github.com/user-attachments/assets/6ea1e6a1-1c76-4aa3-a384-27779058d80d" />
+</p>
+
 ---
 
 ## If something isn't right
