@@ -131,6 +131,29 @@ class DoomContractTests(unittest.TestCase):
         self.assertIsNone(re.search(r"setInterval|setTimeout", self.js), "the shared frame loop drives the game")
 
 
+class SoundReleaseTests(unittest.TestCase):
+    """The sound package ships wrapped like every other download: a `mods` folder to merge."""
+
+    def test_the_zip_holds_the_package_under_mods_and_is_named_for_the_app_version(self):
+        import tempfile
+        import zipfile
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import release_sound
+        self.assertEqual(release_sound.release_name("0.6.0"), "ACEDOOM-sound-0.6.0.zip")
+        self.assertEqual(release_sound.app_version(), json.load(open(os.path.join(APP, "app.json"), encoding="utf-8"))["version"],
+                         "the sound zip carries the app's version: audiomap.js and the bank are two halves of one thing")
+        with tempfile.TemporaryDirectory() as tmp:
+            package = os.path.join(tmp, "ACEUIAppLoader-doom.kspkg")
+            with open(package, "wb") as f:
+                f.write(b"not really a package")
+            dest = release_sound.zip_sound(package, os.path.join(tmp, "out", "x.zip"))
+            with zipfile.ZipFile(dest) as z:
+                self.assertEqual(z.namelist(), ["mods/ACEUIAppLoader-doom.kspkg"])
+                self.assertEqual(z.read("mods/ACEUIAppLoader-doom.kspkg"), b"not really a package")
+            again = release_sound.zip_sound(package, os.path.join(tmp, "out", "y.zip"))
+            self.assertEqual(open(dest, "rb").read(), open(again, "rb").read(), "reproducible")
+
+
 class BankPatchTests(unittest.TestCase):
     """tools/patch_bank.py: the rebuilt gui.bank must be what FMOD expects (launches 29-32 taught each rule)."""
 
