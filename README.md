@@ -59,6 +59,8 @@ silent and everything else works.
 In the car, press <kbd>Insert</kbd>. DOOM is also listed in the app drawer (mouse to the right
 edge of the screen) with its own switch and an **OPTIONS** button.
 
+With ACE UI App Loader 0.27.0 or newer, right-click DOOM's title bar for its options; a right-click on the screen stays "use".
+
 <p align="center">
 <img width="486" height="322" alt="DOOM running on the ACE HUD" src="https://github.com/user-attachments/assets/6bc8cc0a-3882-4274-850c-0fd0b5e756d7" />
 </p>
@@ -150,5 +152,5 @@ encoder, the CSS and the tools are ours under the same licence. Everything else:
 "DOOM" is a registered trademark of ZeniMax Media Inc.; this app is unaffiliated and unapproved.
 
 <div align="center">
-<sub>ACE DOOM 0.6.0 · needs ACE UI App Loader 0.23.0 or newer</sub>
+<sub>ACE DOOM 0.6.1 · needs ACE UI App Loader 0.23.0 or newer</sub>
 </div>

@@ -19,7 +19,7 @@ MODULE = os.path.join(APP, "doomjs.js")
 
 class Tests(AppTests):
     ROOT = ROOT
-    MIN_CASES = 11
+    MIN_CASES = 21
     HOT_PATH = ("// ---- rendering", "// ---- state changes")
 
 
@@ -129,6 +129,11 @@ class DoomContractTests(unittest.TestCase):
         self.assertIn("if (!state.open || ACEUIAppLoader.hudHidden() || doom.phase !== PHASE.running) {", self.js)
         self.assertIn("doom.clockMs += step;", self.js)
         self.assertIsNone(re.search(r"setInterval|setTimeout", self.js), "the shared frame loop drives the game")
+
+    def test_the_screen_keeps_its_right_click(self):
+        # right-click on the screen is "use"; the loader (0.27.0) opens an app's options on a right-click unless the element says no
+        self.assertIn('const NO_RIGHT_ATTR = "data-noright";', self.js)
+        self.assertIn('screenAttrs[NO_RIGHT_ATTR] = "";', self.js)
 
 
 class SoundReleaseTests(unittest.TestCase):

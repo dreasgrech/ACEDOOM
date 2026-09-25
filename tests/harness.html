@@ -198,7 +198,7 @@
                 input.remove();
             });
 
-            t("mouse: left button on the screen fires, right button uses, released anywhere", function () {
+            t("mouse: left on the screen fires, right uses, one at a time, released anywhere or on blur; the title bar's right-click opens the settings, the screen's does not", function () {
                 const calls = [];
                 const real = { down: state.doom.exports.reportKeyDown, up: state.doom.exports.reportKeyUp };
                 const screen = root.querySelector(".dm-screen");
@@ -208,11 +208,84 @@
                 screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }));
                 window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
                 screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }));
-                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-                state.doom.exports.reportKeyDown = real.down; state.doom.exports.reportKeyUp = real.up;
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 2 }));
                 const fire = state.doom.named.Control, use = state.doom.named.Space;
                 eq(JSON.stringify(calls), JSON.stringify([["down", fire], ["up", fire], ["down", use], ["up", use]]), "one button at a time, released on window mouseup");
+                // holding fire, a right tap (press and release) leaves the fire held until the left lets go
+                calls.length = 0;
+                screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+                screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }));
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 2 }));
+                eq(JSON.stringify(calls), JSON.stringify([["down", fire]]), "the right release did not let go of the fire");
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+                eq(JSON.stringify(calls), JSON.stringify([["down", fire], ["up", fire]]), "the left release does");
+                // "use" held: a release the engine may report as button 0 still lets it go (fail open)
+                calls.length = 0;
+                screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }));
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 }));
+                eq(JSON.stringify(calls), JSON.stringify([["down", use], ["up", use]]), "a release reported as the left one lets \"use\" go");
+                // a release the page never hears: the window losing focus, or DOOM closing, lets go
+                calls.length = 0;
+                screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+                window.dispatchEvent(new Event("blur"));
+                eq(JSON.stringify(calls), JSON.stringify([["down", fire], ["up", fire]]), "focus lost: the fire lets go");
+                eq(state.mouseKey, null);
+                state.doom.exports.reportKeyDown = real.down; state.doom.exports.reportKeyUp = real.up;
                 ok(screen.hasAttribute("data-nodrag"), "pressing the screen does not drag the panel");
+                // loader 0.27: a right-click on an app opens its settings, except where the app keeps the right button
+                const S = ACEUIAppLoader.settings;
+                ok(S && typeof S.rightClick === "function", "the loader next to this repo has right-click (0.27.0 or newer)");
+                ok(screen.hasAttribute("data-noright"), "the screen keeps its right button: it is \"use\"");
+                eq(S.isOpen("doom"), false, "so \"use\" opened no settings window");
+                // not cancelable: DOOM's own preventDefault cannot mark it handled, so only the marker keeps it off the settings
+                const frame = screen.querySelector("img");
+                frame.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: false, button: 2 }));
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 2 }));
+                eq(state.mouseKey, null, "and its release let \"use\" go");
+                eq(S.isOpen("doom"), false, "nor on the frame image inside it, where a real right-click lands, by the marker alone");
+                root.querySelector(".dm-header").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }));
+                eq(S.isOpen("doom"), true, "a right-click on the title bar opens DOOM's settings");
+                window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 2 }));
+                S.close("doom");
+            });
+
+            t("mouse: a release with no button field lets the held key go", function () {
+                const calls = [];
+                const real = { down: state.doom.exports.reportKeyDown, up: state.doom.exports.reportKeyUp };
+                const screen = root.querySelector(".dm-screen");
+                state.doom.exports.reportKeyDown = function (k) { calls.push(["down", k]); };
+                state.doom.exports.reportKeyUp = function (k) { calls.push(["up", k]); };
+                try {
+                    eq(state.mouseKey, null, "nothing held");
+                    screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+                    const up = new MouseEvent("mouseup", { bubbles: true }); Object.defineProperty(up, "button", { value: undefined });
+                    window.dispatchEvent(up);
+                    const fire = state.doom.named.Control;
+                    eq(JSON.stringify(calls), JSON.stringify([["down", fire], ["up", fire]]), "released");
+                } finally { state.doom.exports.reportKeyDown = real.down; state.doom.exports.reportKeyUp = real.up; }
+            });
+
+            t("mouse: closing DOOM with fire held lets it go; a release after the module failed reports nothing to it", function () {
+                const calls = [];
+                const real = { down: state.doom.exports.reportKeyDown, up: state.doom.exports.reportKeyUp };
+                const screen = root.querySelector(".dm-screen");
+                const fire = state.doom.named.Control;
+                state.doom.exports.reportKeyDown = function (k) { calls.push(["down", k]); };
+                state.doom.exports.reportKeyUp = function (k) { calls.push(["up", k]); };
+                try {
+                    screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+                    ACEDoom.setOpen(state, false);
+                    eq(JSON.stringify(calls), JSON.stringify([["down", fire], ["up", fire]]), "closing let the fire go");
+                    eq(state.mouseKey, null, "nothing held");
+                    ACEDoom.setOpen(state, true);
+                    calls.length = 0;
+                    screen.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+                    const phase = state.doom.phase;
+                    state.doom.phase = "failed";
+                    state.doom.exports.reportKeyUp = function () { throw new Error("module gone"); };
+                    try { window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 })); } finally { state.doom.phase = phase; }
+                    eq(state.mouseKey, null, "released without reporting to a failed module");
+                } finally { state.doom.exports.reportKeyDown = real.down; state.doom.exports.reportKeyUp = real.up; }
             });
 
             t("audio: mapped sounds become UIAudioRequestAudioEvent requests, quiet, unmapped and excess ones do not; music restarts by length", function () {

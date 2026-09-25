@@ -239,6 +239,8 @@ const ACEDoom = (function () {
 
     const ACTION_ATTR = "data-action";
     const NO_DRAG_ATTR = "data-nodrag";
+    /** The screen's right-click is DOOM's "use": the loader's right-click for the options is kept off it (loader 0.27.0). */
+    const NO_RIGHT_ATTR = "data-noright";
     const ACTION_SMALLER = "smaller";
     const ACTION_LARGER = "larger";
     const ACTION_CLOSE = "close";
@@ -293,6 +295,7 @@ const ACEDoom = (function () {
         const screenAttrs = {};
 
         screenAttrs[NO_DRAG_ATTR] = "";
+        screenAttrs[NO_RIGHT_ATTR] = "";
 
         return el("div", CLASS.header)
             + el("div", CLASS.title) + TITLE_TEXT + el("span", CLASS.version) + me.version + close("span") + close("div")
@@ -333,6 +336,7 @@ const ACEDoom = (function () {
             toggleDown: false,
             focusUnbind: null,      // click-to-focus watcher while the panel is open
             mouseKey: null,             // DOOM key held by a mouse button on the screen
+            mouseButton: null,          // the button holding it: a right release while it is the left (fire) does not let it go
             unmappedLogged: 0,
             soundsLogged: 0,
             requestsThisFrame: 0,
@@ -1012,6 +1016,7 @@ const ACEDoom = (function () {
             boot(state);
         } else {
             releaseKeys(state);
+            onMouseUp(state, null);
             stopMusic(state);
         }
     };
@@ -1116,16 +1121,20 @@ const ACEDoom = (function () {
         if (!state.open || state.doom.phase !== PHASE.running || key === undefined || state.mouseKey !== null) { return; }
 
         state.mouseKey = key;
+        state.mouseButton = e.button;
         e.preventDefault();
         report(state, key, true);
     };
 
-    const onMouseUp = function (state) {
-        if (state.mouseKey === null) { return; }
+    const onMouseUp = function (state, e) {
+        // a right tap while left fires leaves the fire held; any other release lets go, as in 0.6.0 (what the engine
+        // reports as a release's button is unmeasured, and a key stuck down would leave DOOM's mouse dead)
+        if (state.mouseKey === null || (state.mouseButton === MOUSE_LEFT && e && e.button === MOUSE_RIGHT)) { return; }
 
         if (state.doom.phase === PHASE.running) { report(state, state.mouseKey, false); }
 
         state.mouseKey = null;
+        state.mouseButton = null;
     };
 
     const onClick = function (state, e) {
@@ -1149,7 +1158,9 @@ const ACEDoom = (function () {
         state.bag = ACEUIAppLoader.dom.listeners();
         state.bag.on(window, "keydown", function (e) { onKey(state, e, true); }, true);
         state.bag.on(window, "keyup", function (e) { onKey(state, e, false); }, true);
-        state.bag.on(window, "mouseup", function () { onMouseUp(state); });
+        state.bag.on(window, "mouseup", function (e) { onMouseUp(state, e); });
+        // a release the page never hears (let go on another screen) must not leave a key held
+        state.bag.on(window, "blur", function () { onMouseUp(state, null); });
         state.bag.on(root, "click", function (e) { onClick(state, e); });
         state.bag.on(state.screen, "mousedown", function (e) { onScreenMouseDown(state, e); });
         state.frames.forEach(function (frame, index) {
