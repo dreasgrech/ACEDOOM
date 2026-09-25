@@ -4,6 +4,9 @@
 
 **DOOM (1993), playable on the HUD of Assetto Corsa EVO.**<br>
 
+[![Latest release](https://img.shields.io/github/v/release/dreasgrech/ACEDOOM?style=flat-square&label=download&color=0a7)](../../releases/latest) [![Needs](https://img.shields.io/badge/needs-ACE_UI_App_Loader-informational?style=flat-square)](https://github.com/dreasgrech/ACEUIAppLoader)
+
+
 </div>
 
 <p align="center">
